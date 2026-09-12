@@ -18,4 +18,14 @@ object BleConstants {
     const val DEFAULT_SCAN_PERIOD_MS = 10000L
     const val DEFAULT_PEER_LINGER_MS = 30000L
     const val MAX_MTU = 512
+
+    /** Timing & stabilization per §4.3 & §7.1 */
+    const val LINK_STABILIZATION_DELAY_MS = 150L
+    const val MTU_WATCHDOG_TIMEOUT_MS = 350L
+
+    /** Fragmentation framing per §3.3 */
+    val CHUNK_HEADER_MAGIC: Byte = 0xBE.toByte()
+    const val ATT_HEADER_BYTES = 3
+    const val CHUNK_HEADER_BYTES = 4
 }
+

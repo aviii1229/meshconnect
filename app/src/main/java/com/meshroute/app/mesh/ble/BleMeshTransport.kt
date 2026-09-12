@@ -11,6 +11,7 @@ import com.meshroute.app.mesh.transport.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.resume
 
 @SuppressLint("MissingPermission")
 class BleMeshTransport(
@@ -50,8 +51,22 @@ class BleMeshTransport(
     private val peerMap = ConcurrentHashMap<String, Peer>()
     private val deviceAddressToNodeId = ConcurrentHashMap<String, String>()
     private val nodeIdToDeviceAddress = ConcurrentHashMap<String, String>()
+    private val preparedWritesMap = ConcurrentHashMap<String, java.io.ByteArrayOutputStream>()
 
     private var isRunning = false
+
+    var isGatewayCandidate: Boolean = false
+    var unsentQueueCount: Int = 0
+
+    fun buildTelemetryBytes(): ByteArray {
+        val bytes = ByteArray(4)
+        val batt = powerManager.batteryLevel.value.coerceIn(0, 100)
+        bytes[0] = batt.toByte()
+        bytes[1] = MobilityState.STATIONARY.code.toByte()
+        bytes[2] = (if (isGatewayCandidate) 100 else 0).toByte()
+        bytes[3] = unsentQueueCount.coerceIn(0, 255).toByte()
+        return bytes
+    }
 
     // ─── Scan Callback ──────────────────────────────────────────
 
@@ -79,10 +94,26 @@ class BleMeshTransport(
             return
         }
 
-        val discoveredNodeId = if (serviceData != null && serviceData.isNotEmpty()) {
-            serviceData.decodeToString()
+        var discoveredNodeId: String
+        var batteryPercent = 100
+        var isCharging = false
+        var mobilityState = MobilityState.STATIONARY
+        var gatewayLikelihood = 0
+        var queueLoad = 0
+
+        if (serviceData != null && serviceData.size >= 5) {
+            val nodeIdLen = serviceData.size - 4
+            discoveredNodeId = serviceData.copyOfRange(0, nodeIdLen).decodeToString()
+            val b0 = serviceData[nodeIdLen].toInt() and 0xFF
+            batteryPercent = b0 and 0x7F
+            isCharging = (b0 and 0x80) != 0
+            mobilityState = MobilityState.fromCode(serviceData[nodeIdLen + 1].toInt() and 0xFF)
+            gatewayLikelihood = serviceData[nodeIdLen + 2].toInt() and 0xFF
+            queueLoad = serviceData[nodeIdLen + 3].toInt() and 0xFF
+        } else if (serviceData != null && serviceData.isNotEmpty()) {
+            discoveredNodeId = serviceData.decodeToString()
         } else {
-            result.device.name ?: result.device.address
+            discoveredNodeId = result.device.name ?: result.device.address
         }
 
         if (discoveredNodeId == selfNodeId) {
@@ -107,7 +138,12 @@ class BleMeshTransport(
             deviceName = deviceName,
             transportType = TransportType.BLE,
             rssi = result.rssi,
-            lastSeenTimestamp = System.currentTimeMillis()
+            lastSeenTimestamp = System.currentTimeMillis(),
+            batteryPercent = batteryPercent,
+            isCharging = isCharging,
+            mobilityState = mobilityState,
+            gatewayLikelihood = gatewayLikelihood,
+            queueLoad = queueLoad
         )
 
         peerMap[discoveredNodeId] = peer
@@ -147,6 +183,17 @@ class BleMeshTransport(
         ) {
             if (characteristic.uuid == BleConstants.CHAR_PACKET_WRITE_UUID && value != null) {
                 val senderId = deviceAddressToNodeId[device.address] ?: device.address
+
+                // Support Bluetooth Core Long-Write buffered writes per §4.4
+                if (preparedWrite) {
+                    val stream = preparedWritesMap.computeIfAbsent(device.address) { java.io.ByteArrayOutputStream() }
+                    stream.write(value)
+                    if (responseNeeded) {
+                        gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
+                    }
+                    return
+                }
+
                 Log.d(TAG, "Received ${value.size} bytes from $senderId via GATT Write")
 
                 val fullPayload: ByteArray? = if (value.size >= 4 && value[0] == CHUNK_HEADER_MAGIC) {
@@ -170,7 +217,7 @@ class BleMeshTransport(
                         null // Still waiting for remaining chunks
                     }
                 } else {
-                    value // Raw / legacy packet format
+                    value // Raw / single write frame!
                 }
 
                 if (fullPayload != null) {
@@ -194,6 +241,30 @@ class BleMeshTransport(
                     gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null)
                 }
             }
+        }
+
+        override fun onExecuteWrite(device: BluetoothDevice, requestId: Int, execute: Boolean) {
+            Log.d(TAG, "GATT Server onExecuteWrite device: ${device.address}, execute: $execute")
+            if (execute) {
+                val stream = preparedWritesMap.remove(device.address)
+                val fullBytes = stream?.toByteArray()
+                if (fullBytes != null && fullBytes.isNotEmpty()) {
+                    val senderId = deviceAddressToNodeId[device.address] ?: device.address
+                    scope.launch {
+                        _inbound.emit(
+                            InboundPacket(
+                                data = fullBytes,
+                                senderNodeId = senderId,
+                                transportType = TransportType.BLE,
+                                receivedTimestamp = System.currentTimeMillis()
+                            )
+                        )
+                    }
+                }
+            } else {
+                preparedWritesMap.remove(device.address)
+            }
+            gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
         }
     }
 
@@ -284,17 +355,22 @@ class BleMeshTransport(
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
             .build()
 
-        // 1. Primary Advertise Data (under 31 bytes)
+        // 1. Primary Advertise Data (strictly under 23 bytes <= 31 bytes per §4.2)
         val advertiseData = AdvertiseData.Builder()
             .setIncludeDeviceName(false)
             .setIncludeTxPowerLevel(false)
             .addServiceUuid(ParcelUuid(BleConstants.SERVICE_UUID))
             .build()
 
-        // 2. Scan Response Data (contains Node ID in Service Data, fits in 31-byte scan response)
+        // 2. Scan Response Data (contains Node ID (9B) + 4-byte Telemetry Beacon in Service Data <= 31 bytes per §4.2)
+        val trimmedNodeId = selfNodeId.take(9)
+        val telemetryBytes = buildTelemetryBytes()
+        val serviceDataBytes = trimmedNodeId.toByteArray(Charsets.UTF_8) + telemetryBytes
+
         val scanResponseData = AdvertiseData.Builder()
             .setIncludeDeviceName(false)
-            .addServiceData(ParcelUuid(BleConstants.SERVICE_UUID), selfNodeId.encodeToByteArray())
+            .setIncludeTxPowerLevel(false)
+            .addServiceData(ParcelUuid(BleConstants.SERVICE_UUID), serviceDataBytes)
             .build()
 
         advertiser?.startAdvertising(settings, advertiseData, scanResponseData, advertiseCallback)
@@ -413,35 +489,55 @@ class BleMeshTransport(
 
             if (device == null) {
                 Log.e(TAG, "Cannot resolve BluetoothDevice for peer: ${peer.nodeId} (address: $address)")
-                if (continuation.isActive) continuation.resume(false) {}
+                if (continuation.isActive) continuation.resume(false)
                 return@suspendCancellableCoroutine
             }
 
-            val chunks = fragmentData(data)
+            // §3.3 Standard Mode: When MTU 512 is supported, emergency packets (~350B) fit in a single write frame
+            val chunks = if (data.size <= BleConstants.MAX_MTU - BleConstants.ATT_HEADER_BYTES) {
+                listOf(data)
+            } else {
+                fragmentData(data)
+            }
+
             var currentChunkIndex = 0
             var gattClient: BluetoothGatt? = null
             var writeCharRef: BluetoothGattCharacteristic? = null
             var serviceDiscoveryStarted = false
 
             val gattCallback = object : BluetoothGattCallback() {
+                private var watchdogJob: Job? = null
+
                 override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
                     if (newState == BluetoothProfile.STATE_CONNECTED) {
-                        Log.d(TAG, "GATT Client connected to ${peer.nodeId}, requesting MTU...")
-                        val mtuOk = gatt.requestMtu(BleConstants.MAX_MTU)
-                        if (!mtuOk && !serviceDiscoveryStarted) {
-                            serviceDiscoveryStarted = true
-                            gatt.discoverServices()
+                        Log.d(TAG, "GATT Client connected to ${peer.nodeId}, link stabilizing (${BleConstants.LINK_STABILIZATION_DELAY_MS}ms)...")
+                        scope.launch {
+                            delay(BleConstants.LINK_STABILIZATION_DELAY_MS)
+                            Log.d(TAG, "GATT link stabilized, requesting MTU ${BleConstants.MAX_MTU} for ${peer.nodeId}...")
+                            gatt.requestMtu(BleConstants.MAX_MTU)
+
+                            // Launch 350ms Watchdog per §4.3 & §7.1 to prevent 10-second service discovery hangs
+                            watchdogJob = scope.launch {
+                                delay(BleConstants.MTU_WATCHDOG_TIMEOUT_MS)
+                                if (!serviceDiscoveryStarted) {
+                                    Log.w(TAG, "Watchdog timeout: onMtuChanged did not fire within ${BleConstants.MTU_WATCHDOG_TIMEOUT_MS}ms. Forcing discoverServices() on ${peer.nodeId}...")
+                                    serviceDiscoveryStarted = true
+                                    gatt.discoverServices()
+                                }
+                            }
                         }
                     } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                        watchdogJob?.cancel()
                         gatt.close()
                         if (continuation.isActive) {
-                            continuation.resume(false) {}
+                            continuation.resume(false)
                         }
                     }
                 }
 
                 override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
-                    Log.d(TAG, "GATT MTU set to $mtu, discovering services...")
+                    Log.d(TAG, "GATT MTU set to $mtu (status $status), discovering services for ${peer.nodeId}...")
+                    watchdogJob?.cancel()
                     if (!serviceDiscoveryStarted) {
                         serviceDiscoveryStarted = true
                         gatt.discoverServices()
@@ -462,17 +558,17 @@ class BleMeshTransport(
                                 if (!writeSuccess) {
                                     Log.e(TAG, "Failed to initiate writeCharacteristic for chunk 0 to ${peer.nodeId}")
                                     gatt.disconnect()
-                                    if (continuation.isActive) continuation.resume(false) {}
+                                    if (continuation.isActive) continuation.resume(false)
                                 }
                             }
                         } else {
                             Log.e(TAG, "Mesh service/characteristic not found on peer ${peer.nodeId}")
                             gatt.disconnect()
-                            if (continuation.isActive) continuation.resume(false) {}
+                            if (continuation.isActive) continuation.resume(false)
                         }
                     } else {
                         gatt.disconnect()
-                        if (continuation.isActive) continuation.resume(false) {}
+                        if (continuation.isActive) continuation.resume(false)
                     }
                 }
 
@@ -492,25 +588,25 @@ class BleMeshTransport(
                                     if (!nextSuccess) {
                                         Log.e(TAG, "Failed to initiate chunk $currentChunkIndex to ${peer.nodeId}")
                                         gatt.disconnect()
-                                        if (continuation.isActive) continuation.resume(false) {}
+                                        if (continuation.isActive) continuation.resume(false)
                                     }
                                 }
                             } else {
                                 gatt.disconnect()
-                                if (continuation.isActive) continuation.resume(false) {}
+                                if (continuation.isActive) continuation.resume(false)
                             }
                         } else {
                             Log.i(TAG, "All ${chunks.size} chunk(s) to ${peer.nodeId} completed successfully")
                             gatt.disconnect()
                             if (continuation.isActive) {
-                                continuation.resume(true) {}
+                                continuation.resume(true)
                             }
                         }
                     } else {
                         Log.e(TAG, "GATT Write failed for chunk $currentChunkIndex with status: $status")
                         gatt.disconnect()
                         if (continuation.isActive) {
-                            continuation.resume(false) {}
+                            continuation.resume(false)
                         }
                     }
                 }

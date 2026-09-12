@@ -41,6 +41,7 @@ fun MainSosScreen(
     onSendSos: () -> Unit,
     isBroadcasting: Boolean,
     receivedPackets: List<SosPacket>,
+    packetStatuses: Map<String, String> = emptyMap(),
     uploadedCount: Int,
     onNavigateToNetworkDetails: () -> Unit,
     modifier: Modifier = Modifier
@@ -132,6 +133,7 @@ fun MainSosScreen(
 
             SosDeliveryFlowView(
                 packets = receivedPackets,
+                packetStatuses = packetStatuses,
                 isInternetAvailable = isInternetAvailable,
                 uploadedCount = uploadedCount,
                 selfNodeId = selfNodeId

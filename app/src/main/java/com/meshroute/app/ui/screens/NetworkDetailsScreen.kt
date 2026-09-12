@@ -210,6 +210,100 @@ fun NetworkDetailsScreen(
                 }
             }
 
+            // ─── Section 2.5: Routing Strategy & Power Savings Benchmark (§2 & §5.2) ──
+            val metrics by router.metricsCollector.metrics.collectAsState()
+            var isEdsEnabled by remember { mutableStateOf(router.routingStrategy is IntelligentEdsRoutingStrategy) }
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = CardBackground),
+                border = BorderStroke(1.dp, DarkBorder),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.AltRoute,
+                                contentDescription = null,
+                                tint = AccentGreen,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Column {
+                                Text(
+                                    "Routing Strategy",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    if (isEdsEnabled) "Intelligent EDS (Anti-Starvation Active)" else "Epidemic Flooding (100% Neighbors)",
+                                    fontSize = 10.sp,
+                                    color = if (isEdsEnabled) AccentGreen else WarningAmber
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = isEdsEnabled,
+                            onCheckedChange = {
+                                isEdsEnabled = it
+                                router.routingStrategy = if (it) IntelligentEdsRoutingStrategy() else EpidemicFloodingStrategy()
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = AccentGreen,
+                                checkedTrackColor = AccentGreenSubtle
+                            )
+                        )
+                    }
+
+                    HorizontalDivider(color = DarkBorder)
+
+                    // Transmission Savings & Energy Metrics
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("Transmission Savings", fontSize = 10.sp, color = TextSecondary)
+                            Text(
+                                "%.1f%%".format(metrics.savingsPercent),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AccentGreen
+                            )
+                        }
+                        Column {
+                            Text("Suppressed Tx", fontSize = 10.sp, color = TextSecondary)
+                            Text(
+                                "${metrics.suppressedTransmissionsCount}",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = WarningAmber
+                            )
+                        }
+                        Column {
+                            Text("RF Energy Saved", fontSize = 10.sp, color = TextSecondary)
+                            Text(
+                                "%.3f J".format(metrics.estimatedRfEnergySavedJoules),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = GpsSkyBlue
+                            )
+                        }
+                    }
+                }
+            }
+
             // ─── Section 3: Developer & Diagnostics Mode Toggle ─────────────────────
             Card(
                 colors = CardDefaults.cardColors(containerColor = CardBackgroundSecondary),

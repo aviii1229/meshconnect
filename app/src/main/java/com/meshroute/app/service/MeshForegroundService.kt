@@ -124,33 +124,24 @@ class MeshForegroundService : Service() {
         if (isRunning) return
         isRunning = true
 
-        val prefs = getSharedPreferences("meshroute_prefs", Context.MODE_PRIVATE)
-        val nodeId = prefs.getString("self_node_id", null) ?: "Node_${Build.MODEL.replace(" ", "_")}_${(1000..9999).random()}"
-        val transport = BleMeshTransport(applicationContext, nodeId)
-        val database = AppDatabase.getInstance(applicationContext)
-        val forwardStore = ForwardStore(database.packetDao())
-        val seenSet = SeenSet(database.seenMessageDao())
-        val router = MeshRouter(nodeId, transport, forwardStore, seenSet)
-        val netMonitor = AndroidNetworkMonitor(applicationContext)
-        val uploader = GatewayUploader(forwardStore, netMonitor)
-
-        this.bleTransport = transport
-        this.router = router
-        this.gatewayUploader = uploader
+        val manager = com.meshroute.app.MeshRouteManager.getInstance(applicationContext)
+        this.bleTransport = manager.transport
+        this.router = manager.router
+        this.gatewayUploader = manager.gatewayUploader
 
         SosNotificationHelper.createNotificationChannel(applicationContext)
 
         scope.launch {
-            transport.start()
-            router.start()
-            uploader.start()
-            Log.i(TAG, "BLE Transport & MeshRouter started under FGS for node: $nodeId")
+            manager.transport.start()
+            manager.router.start()
+            manager.gatewayUploader.start()
+            Log.i(TAG, "BLE Transport & MeshRouter started under FGS for node: ${manager.selfNodeId}")
 
             // Listen for delivered SOS packets and trigger rich notifications
-            router.deliveredPackets.collect { packet ->
+            manager.router.deliveredPackets.collect { packet ->
                 Log.i(TAG, "FGS received SOS packet ${packet.messageId} - dispatching emergency notification")
                 SosNotificationHelper.showSosNotification(applicationContext, packet)
-                uploader.triggerUpload()
+                manager.gatewayUploader.triggerUpload()
             }
         }
     }

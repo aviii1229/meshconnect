@@ -325,7 +325,7 @@ fun SosCreationForm(
             // Primary SOS Button (Full-width, prominent, unmistakable)
             Button(
                 onClick = onSendSos,
-                enabled = !isBroadcasting && messageText.isNotBlank(),
+                enabled = !isBroadcasting,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
@@ -370,7 +370,7 @@ fun SosCreationForm(
                                 letterSpacing = 1.sp
                             )
                             Text(
-                                text = "Broadcast encrypted emergency message",
+                                text = if (messageText.isBlank()) "Broadcast default emergency distress signal" else "Broadcast encrypted emergency message",
                                 fontSize = 10.sp,
                                 color = Color.White.copy(alpha = 0.85f)
                             )

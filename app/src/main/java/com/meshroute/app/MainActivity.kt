@@ -64,15 +64,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        selfNodeId = getOrCreateSelfNodeId()
-        val database = AppDatabase.getInstance(applicationContext)
-        forwardStore = ForwardStore(database.packetDao())
-        seenSet = SeenSet(database.seenMessageDao())
-        transport = BleMeshTransport(applicationContext, selfNodeId)
-        router = MeshRouter(selfNodeId, transport, forwardStore, seenSet)
-        locationProvider = AndroidGpsLocationProvider(applicationContext)
-        networkMonitor = AndroidNetworkMonitor(applicationContext)
-        gatewayUploader = GatewayUploader(forwardStore, networkMonitor)
+        val manager = MeshRouteManager.getInstance(applicationContext)
+        selfNodeId = manager.selfNodeId
+        forwardStore = manager.forwardStore
+        seenSet = manager.seenSet
+        transport = manager.transport
+        router = manager.router
+        locationProvider = manager.locationProvider
+        networkMonitor = manager.networkMonitor
+        gatewayUploader = manager.gatewayUploader
 
         setContent {
             MeshRouteTheme {
@@ -166,36 +166,55 @@ fun MeshRouteApp(
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        if (results.values.all { it }) {
-            coroutineScope.launch {
+    ) { _ ->
+        coroutineScope.launch {
+            router.start()
+            gatewayUploader.start()
+            currentLocation = locationProvider.getLastKnownLocation()
+            val hasBle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                ContextCompat.checkSelfPermission(activity, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(activity, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(activity, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+            } else {
+                ContextCompat.checkSelfPermission(activity, Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED
+            }
+            if (hasBle) {
                 transport.start()
-                router.start()
-                gatewayUploader.start()
-                currentLocation = locationProvider.getLastKnownLocation()
             }
         }
     }
 
     LaunchedEffect(Unit) {
         SosNotificationHelper.createNotificationChannel(activity)
-        val hasAll = requiredPermissions.all {
-            ContextCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED
-        }
-        if (hasAll) {
-            transport.start()
-            router.start()
-            gatewayUploader.start()
-            currentLocation = locationProvider.getLastKnownLocation()
+        router.start()
+        gatewayUploader.start()
+        currentLocation = locationProvider.getLastKnownLocation()
+
+        val hasBle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            ContextCompat.checkSelfPermission(activity, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(activity, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(activity, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
         } else {
-            permissionLauncher.launch(requiredPermissions)
+            ContextCompat.checkSelfPermission(activity, Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED
+        }
+        if (hasBle) {
+            transport.start()
+        }
+
+        val missing = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(activity, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            permissionLauncher.launch(missing.toTypedArray())
         }
     }
 
     // Reactive packet and event collectors
     LaunchedEffect(Unit) {
         router.deliveredPackets.collect { packet ->
-            receivedPackets.add(0, packet)
+            if (receivedPackets.none { it.messageId == packet.messageId }) {
+                receivedPackets.add(0, packet)
+            }
             SosNotificationHelper.showSosNotification(activity, packet)
             gatewayUploader.triggerUpload()
         }
@@ -214,6 +233,18 @@ fun MeshRouteApp(
     }
     LaunchedEffect(Unit) {
         gatewayUploader.uploadEvents.collect { event -> gatewayEvents.add(0, event) }
+    }
+
+    // Unified list of active packets combining disk persistence and in-memory deliveries
+    val allPackets = remember(storedPackets, receivedPackets.toList()) {
+        val dbPackets = storedPackets.map { it.toSosPacket() }
+        (receivedPackets + dbPackets)
+            .distinctBy { it.messageId }
+            .sortedByDescending { it.timestamp }
+    }
+
+    val packetStatuses = remember(storedPackets) {
+        storedPackets.associate { it.packetId to it.status }
     }
 
     // Handle back button when in Network Details screen
@@ -258,21 +289,63 @@ fun MeshRouteApp(
                 },
                 onSendSos = {
                     coroutineScope.launch {
-                        isBroadcasting = true
-                        val loc = locationProvider.getCurrentLocation(2000L) ?: currentLocation
-                        router.originateSos(
-                            message = sosMessageText,
-                            location = loc,
-                            senderName = senderName,
-                            medicalInfo = medicalNotes,
-                            ttl = selectedReachHops
-                        )
-                        gatewayUploader.triggerUpload()
-                        isBroadcasting = false
+                        try {
+                            isBroadcasting = true
+                            val effectiveMessage = if (sosMessageText.isNotBlank()) {
+                                sosMessageText
+                            } else {
+                                "EMERGENCY: Immediate medical/search-and-rescue assistance required"
+                            }
+                            // Instant location resolution without 2000ms blocking delay
+                            val loc = currentLocation ?: locationProvider.getLastKnownLocation()
+
+                            val packet = router.originateSos(
+                                message = effectiveMessage,
+                                location = loc,
+                                senderName = senderName.ifBlank { "User" },
+                                medicalInfo = medicalNotes,
+                                ttl = selectedReachHops
+                            )
+
+                            // Immediately add to in-memory list so card renders instantly
+                            if (receivedPackets.none { it.messageId == packet.messageId }) {
+                                receivedPackets.add(0, packet)
+                            }
+
+                            // Trigger immediate gateway upload if internet available
+                            gatewayUploader.triggerUpload()
+
+                            // Haptic vibration feedback
+                            try {
+                                val vibrator = activity.getSystemService(android.os.Vibrator::class.java)
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    vibrator?.vibrate(android.os.VibrationEffect.createOneShot(250, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    vibrator?.vibrate(250)
+                                }
+                            } catch (_: Exception) {}
+
+                            android.widget.Toast.makeText(
+                                activity,
+                                "🚨 SOS Broadcast Active! Enqueued in mesh & transmitting.",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        } catch (e: Exception) {
+                            android.util.Log.e("MainActivity", "Failed to broadcast SOS: ${e.message}", e)
+                            android.widget.Toast.makeText(
+                                activity,
+                                "Failed to send SOS: ${e.message}",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        } finally {
+                            isBroadcasting = false
+                        }
                     }
                 },
                 isBroadcasting = isBroadcasting,
-                receivedPackets = receivedPackets,
+                receivedPackets = allPackets,
+                packetStatuses = packetStatuses,
                 uploadedCount = uploadedCount,
                 onNavigateToNetworkDetails = {
                     currentScreen = AppScreen.NETWORK_DETAILS

@@ -230,6 +230,8 @@ async function runTests() {
       req.on('error', reject);
       req.end();
     });
+
+    // -------------------------------------------------------------
     // Test 11: Google Maps Configuration (GET /api/config)
     // -------------------------------------------------------------
     console.log('\n[Test 11] Dashboard API: Google Maps Configuration');
@@ -239,7 +241,22 @@ async function runTests() {
     assert(configRes.body.google_maps_api_key !== undefined, 'Google Maps API key field is present');
     assert(configRes.body.map_style_url !== undefined, 'Map style URL is present');
 
-    console.log('\n🎉 ALL BACKEND & DASHBOARD API TESTS PASSED!\n');
+    // -------------------------------------------------------------
+    // Test 12: Recent Incidents Events Feed (TECHNICAL_SPECIFICATIONS.md §6.2)
+    // -------------------------------------------------------------
+    console.log('\n[Test 12] GET /api/sos-events Endpoint Verification');
+    const resEvents = await request('GET', '/api/sos-events');
+    assert(resEvents.statusCode === 200, 'GET /api/sos-events returns 200 OK');
+    assert(Array.isArray(resEvents.body), 'Returns array of incidents');
+    assert(resEvents.body.length >= 1, 'Array contains recent incidents');
+    const firstEvent = resEvents.body[0];
+    assert(firstEvent.message_id !== undefined, 'Event contains message_id');
+    assert(firstEvent.location !== undefined, 'Event contains location coordinates');
+    assert(firstEvent.medical_note !== undefined, 'Event contains medical note');
+    assert(firstEvent.hops !== undefined, 'Event contains hops traversed');
+    assert(firstEvent.timestamp !== undefined, 'Event contains timestamp');
+
+    console.log('\n🎉 ALL BACKEND, DASHBOARD & SPECIFICATION TESTS PASSED!\n');
   } finally {
     server.close();
   }

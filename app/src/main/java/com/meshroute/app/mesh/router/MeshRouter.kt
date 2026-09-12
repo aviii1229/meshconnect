@@ -53,7 +53,9 @@ class MeshRouter(
     val selfNodeId: String,
     private val transport: MeshTransport,
     val forwardStore: ForwardStore,
-    val seenSet: SeenSet = SeenSet()
+    val seenSet: SeenSet = SeenSet(),
+    var routingStrategy: RoutingStrategy = EpidemicFloodingStrategy(),
+    val metricsCollector: DeliveryMetricsCollector = DeliveryMetricsCollector()
 ) {
     companion object {
         private const val TAG = "MeshRouter"
@@ -182,8 +184,21 @@ class MeshRouter(
             "Originating encrypted SOS packet: ${packet.messageId} (TTL: ${packet.ttl}, GPS: ${packet.location?.latitude ?: "N/A"}, ${packet.location?.longitude ?: "N/A"}, Payload bytes: ${encryptedCiphertextBase64.length})"
         )
 
-        // 4. Transmit over radio transport
-        val sent = transport.send(packet.toByteArray())
+        // 4. Transmit over radio transport using active RoutingStrategy
+        val decision = routingStrategy.evaluateTargets(packet, transport.neighbors.value, selfNodeId)
+        metricsCollector.recordDecision(decision.candidateCount, decision.selectedTargets.size)
+
+        var sent = false
+        if (decision.selectedTargets.isNotEmpty()) {
+            for (target in decision.selectedTargets) {
+                if (transport.send(packet.toByteArray(), target)) {
+                    sent = true
+                }
+            }
+        } else {
+            sent = transport.send(packet.toByteArray())
+        }
+
         if (sent) {
             forwardStore.markRelayed(packet.messageId)
         }
@@ -308,9 +323,22 @@ class MeshRouter(
             "Relaying encrypted SOS ${relayed.messageId}: Hop ${packet.hops} ➔ ${relayed.hops}/${packet.ttl} (Path: ${relayed.hopPath.joinToString(" ➔ ")})"
         )
 
-        // Forward to reachable neighbors
-        val sent = transport.send(relayed.toByteArray())
-        if (sent) {
+        // ─── GATE 5: Forwarding Evaluation via RoutingStrategy ───
+        val decision = routingStrategy.evaluateTargets(relayed, transport.neighbors.value, selfNodeId)
+        metricsCollector.recordDecision(decision.candidateCount, decision.selectedTargets.size)
+
+        var anySent = false
+        if (decision.selectedTargets.isNotEmpty()) {
+            for (target in decision.selectedTargets) {
+                if (transport.send(relayed.toByteArray(), target)) {
+                    anySent = true
+                }
+            }
+        } else {
+            anySent = transport.send(relayed.toByteArray())
+        }
+
+        if (anySent) {
             forwardStore.markRelayed(packet.messageId)
         }
     }
@@ -359,7 +387,20 @@ class MeshRouter(
                 packet
             }
 
-            val sent = transport.send(toForward.toByteArray())
+            val decision = routingStrategy.evaluateTargets(toForward, transport.neighbors.value, selfNodeId)
+            metricsCollector.recordDecision(decision.candidateCount, decision.selectedTargets.size)
+
+            var sent = false
+            if (decision.selectedTargets.isNotEmpty()) {
+                for (target in decision.selectedTargets) {
+                    if (transport.send(toForward.toByteArray(), target)) {
+                        sent = true
+                    }
+                }
+            } else {
+                sent = transport.send(toForward.toByteArray())
+            }
+
             if (sent) {
                 restoredFromDiskCount.incrementAndGet()
                 forwardStore.markRelayed(packet.messageId)

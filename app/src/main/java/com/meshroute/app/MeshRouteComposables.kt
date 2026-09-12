@@ -73,57 +73,123 @@ fun NeighborsList(neighbors: Set<Peer>) {
                 border = BorderStroke(1.dp, DarkBorder),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Surface(
-                        color = GpsSkyBlueSubtle,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.size(38.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
+                        Surface(
+                            color = GpsSkyBlueSubtle,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Default.Bluetooth,
+                                    contentDescription = null,
+                                    tint = GpsSkyBlue,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                peer.nodeId,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = TextPrimary
+                            )
+                            Text(
+                                "${peer.deviceName} • ${peer.transportType.name}",
+                                fontSize = 11.sp,
+                                color = TextSecondary
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            val rssiColor = when {
+                                peer.rssi >= -65 -> AccentGreen
+                                peer.rssi >= -80 -> WarningAmber
+                                else -> EmergencyRed
+                            }
+                            Text(
+                                "${peer.rssi} dBm",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = rssiColor
+                            )
                             Icon(
-                                Icons.Default.Bluetooth,
-                                contentDescription = null,
-                                tint = GpsSkyBlue,
-                                modifier = Modifier.size(18.dp)
+                                Icons.Default.SignalCellularAlt,
+                                contentDescription = "Signal Strength",
+                                tint = rssiColor,
+                                modifier = Modifier.size(14.dp)
                             )
                         }
                     }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            peer.nodeId,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = TextPrimary
-                        )
-                        Text(
-                            "${peer.deviceName} • ${peer.transportType.name}",
-                            fontSize = 11.sp,
-                            color = TextSecondary
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        val rssiColor = when {
-                            peer.rssi >= -65 -> AccentGreen
-                            peer.rssi >= -80 -> WarningAmber
-                            else -> EmergencyRed
+
+                    // Telemetry Badges (§4.2 & §2)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Battery badge
+                        Surface(
+                            color = if (peer.batteryPercent > 20) AccentGreenSubtle else EmergencyRedSubtle,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "🔋 ${peer.batteryPercent}%${if (peer.isCharging) " ⚡" else ""}",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (peer.batteryPercent > 20) AccentGreen else EmergencyRed,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
                         }
-                        Text(
-                            "${peer.rssi} dBm",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = rssiColor
-                        )
-                        Icon(
-                            Icons.Default.SignalCellularAlt,
-                            contentDescription = "Signal Strength",
-                            tint = rssiColor,
-                            modifier = Modifier.size(14.dp)
-                        )
+
+                        // Mobility badge
+                        Surface(
+                            color = DarkSurfaceElevated,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "🚶 ${peer.mobilityState.name.lowercase().replaceFirstChar { it.uppercase() }}",
+                                fontSize = 10.sp,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        // Gateway likelihood badge
+                        Surface(
+                            color = if (peer.gatewayLikelihood > 50) AccentGreenSubtle else DarkSurfaceElevated,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "🌐 GW ${peer.gatewayLikelihood}%",
+                                fontSize = 10.sp,
+                                fontWeight = if (peer.gatewayLikelihood > 50) FontWeight.Bold else FontWeight.Normal,
+                                color = if (peer.gatewayLikelihood > 50) AccentGreen else TextSecondary,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        // Queue load badge
+                        Surface(
+                            color = DarkSurfaceElevated,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "📦 Q: ${peer.queueLoad}",
+                                fontSize = 10.sp,
+                                color = TextMuted,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
                     }
                 }
             }

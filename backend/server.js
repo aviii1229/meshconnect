@@ -490,6 +490,30 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // GET /api/sos-events (TECHNICAL_SPECIFICATIONS.md §6.2)
+  // Returns array of recent incidents sorted newest first, including origin coordinates, hops traversed, decrypted medical note, and timestamp.
+  if (req.method === 'GET' && url.pathname === '/api/sos-events') {
+    const events = incidentLog.map(inc => ({
+      incident_id: inc.incident_id,
+      message_id: inc.message_id,
+      originator_id: inc.originator_id,
+      gateway_node: inc.gateway_node,
+      priority: inc.priority,
+      hops: inc.hops,
+      ttl: inc.ttl,
+      hop_path: inc.hop_path,
+      location: inc.location,
+      decrypted_payload: inc.decrypted_payload,
+      medical_note: inc.decrypted_payload ? (inc.decrypted_payload.medical_info || '') : '',
+      message: inc.decrypted_payload ? (inc.decrypted_payload.message || '') : '',
+      sender_name: inc.decrypted_payload ? (inc.decrypted_payload.sender_name || '') : '',
+      battery_percent: inc.decrypted_payload ? inc.decrypted_payload.battery_percent : -1,
+      timestamp: inc.received_at,
+      received_at: inc.received_at
+    }));
+    return sendJson(res, 200, events);
+  }
+
   // POST /api/sos
   if (req.method === 'POST' && url.pathname === '/api/sos') {
     let body = '';

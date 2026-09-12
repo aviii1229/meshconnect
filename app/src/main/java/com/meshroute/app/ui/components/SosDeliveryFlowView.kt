@@ -34,6 +34,7 @@ fun SosDeliveryFlowView(
     isInternetAvailable: Boolean,
     uploadedCount: Int,
     selfNodeId: String,
+    packetStatuses: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
     if (packets.isEmpty()) {
@@ -80,10 +81,12 @@ fun SosDeliveryFlowView(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         packets.forEach { packet ->
+            val status = packetStatuses[packet.messageId]
             SosPacketDeliveryCard(
                 packet = packet,
                 isInternetAvailable = isInternetAvailable,
-                isUploaded = uploadedCount > 0,
+                isUploaded = uploadedCount > 0 || status == "UPLOADED",
+                packetStatus = status,
                 selfNodeId = selfNodeId,
                 timeFormatted = timeFormat.format(Date(packet.timestamp))
             )
@@ -96,10 +99,12 @@ private fun SosPacketDeliveryCard(
     packet: SosPacket,
     isInternetAvailable: Boolean,
     isUploaded: Boolean,
+    packetStatus: String? = null,
     selfNodeId: String,
     timeFormatted: String
 ) {
-    var isDecryptedRevealed by remember(packet.messageId) { mutableStateOf(false) }
+    val isSelfOriginated = packet.originatorId == selfNodeId
+    var isDecryptedRevealed by remember(packet.messageId) { mutableStateOf(isSelfOriginated) }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = CardBackground),
@@ -122,14 +127,14 @@ private fun SosPacketDeliveryCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Surface(
-                        color = EmergencyRedSubtle,
+                        color = if (isSelfOriginated) EmergencyRed else EmergencyRedSubtle,
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
-                            text = "SOS",
+                            text = if (isSelfOriginated) "YOUR SOS" else "SOS",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Black,
-                            color = EmergencyRed,
+                            color = if (isSelfOriginated) Color.White else EmergencyRed,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
@@ -312,51 +317,83 @@ private fun SosPacketDeliveryCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Step 1: Origin & Prepared
+                // Stage 1: Origin & Local Persistence
                 DeliveryStepItem(
-                    title = "Origin (YOU)",
-                    subtitle = "Message encrypted with AES-256-GCM and stored locally in Room DB.",
+                    title = "1. Origin (YOU)",
+                    subtitle = "Message encrypted with AES-256-GCM and stored durably in Room SQLite DB.",
                     icon = Icons.Default.PersonPinCircle,
                     state = StepState.COMPLETED
                 )
 
-                // Step 2: Multi-Hop Propagation
+                // Stage 2: BLE Multi-Hop Mesh Relaying
                 val hopCount = packet.hops
                 val pathString = if (packet.hopPath.isNotEmpty()) {
-                    packet.hopPath.joinToString(" ➔ ") + " ➔ $selfNodeId"
+                    packet.hopPath.joinToString(" ➔ ") + (if (packet.hopPath.last() != selfNodeId) " ➔ $selfNodeId" else "")
                 } else {
                     "Direct 1-Hop Broadcast"
                 }
+                val stage2Title = when {
+                    isSelfOriginated && packetStatus == "RELAYED" -> "2. Relayed to Mesh Peers (BLE GATT)"
+                    isSelfOriginated -> "2. BLE Mesh Broadcasting (Active)"
+                    hopCount > 0 -> "2. BLE Mesh Relaying ($hopCount Hop${if (hopCount == 1) "" else "s"})"
+                    else -> "2. BLE Mesh Broadcasting (Direct)"
+                }
+                val stage2Subtitle = when {
+                    isSelfOriginated && packetStatus == "RELAYED" -> "✓ Dispatched to neighboring mesh peer via BLE GATT write."
+                    isSelfOriginated -> "Durable store-and-forward active; advertising & transmitting to peers in range."
+                    else -> "Relay Path: $pathString"
+                }
                 DeliveryStepItem(
-                    title = if (hopCount > 0) "Relaying ($hopCount Hop${if (hopCount == 1) "" else "s"})" else "Broadcasting (Direct)",
-                    subtitle = "Relay Path: $pathString",
+                    title = stage2Title,
+                    subtitle = stage2Subtitle,
                     icon = Icons.Default.ShareLocation,
                     state = StepState.COMPLETED
                 )
 
-                // Step 3: Gateway Detection
+                // Stage 3: Gateway Detection
                 val gatewayReached = isInternetAvailable || isUploaded
                 DeliveryStepItem(
-                    title = "Rescue Gateway",
+                    title = "3. Gateway Node Intercept",
                     subtitle = if (gatewayReached) {
-                        "Rescue gateway connected and processing emergency packet."
+                        "Uplink gateway peer detected with active internet access."
                     } else {
-                        "Your SOS is retained locally and will relay automatically when a gateway is reachable."
+                        "Stored & carried in mesh queue; awaiting internet-connected gateway peer."
                     },
                     icon = Icons.Default.Dns,
                     state = if (gatewayReached) StepState.COMPLETED else StepState.IN_PROGRESS
                 )
 
-                // Step 4: Delivered to Rescue Service
+                // Stage 4: Cloud Ingestion
+                val cloudIngested = isUploaded
+                val cloudState = when {
+                    cloudIngested -> StepState.COMPLETED
+                    isInternetAvailable -> StepState.IN_PROGRESS
+                    else -> StepState.PENDING
+                }
                 DeliveryStepItem(
-                    title = "Delivered to Rescue Services",
-                    subtitle = if (isUploaded) {
-                        "✓ Confirmed: Rescue gateway received your emergency message."
+                    title = "4. Cloud Ingestion (POST /api/sos)",
+                    subtitle = if (cloudIngested) {
+                        "✓ Acknowledged: Ingested and deduplicated by MeshRoute cloud API."
+                    } else if (isInternetAvailable) {
+                        "Connecting to emergency backend endpoint..."
                     } else {
                         "Pending gateway uplink transmission."
                     },
+                    icon = Icons.Default.CloudUpload,
+                    state = cloudState
+                )
+
+                // Stage 5: Emergency Dashboard & Rescue Dispatch
+                val dispatchedState = if (cloudIngested) StepState.COMPLETED else StepState.PENDING
+                DeliveryStepItem(
+                    title = "5. Incident Dispatched to Dashboard",
+                    subtitle = if (cloudIngested) {
+                        "✓ Confirmed: Emergency chime sounded, red beacon plotted at GPS coordinates on tactical map."
+                    } else {
+                        "Awaiting cloud ingestion before emergency alert broadcast."
+                    },
                     icon = Icons.Default.CheckCircle,
-                    state = if (isUploaded) StepState.COMPLETED else StepState.PENDING
+                    state = dispatchedState
                 )
             }
         }
