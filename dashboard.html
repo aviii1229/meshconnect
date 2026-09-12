@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MeshRoute Emergency Operations & Dispatch Dashboard</title>
+  <meta name="description" content="Real-time multi-hop emergency mesh network dispatch console with interactive map pins and incident triage." />
+  <link rel="icon" type="image/jpeg" href="/app-icon.jpg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/dashboard.css" />
+</head>
+<body>
+  <div class="dashboard-container">
+    <!-- Header -->
+    <header class="dash-header">
+      <div class="brand-section">
+        <div class="brand-logo-badge">🛰️</div>
+        <div class="brand-titles">
+          <div class="brand-title">
+            MeshRoute <span class="badge">Dispatch Console</span>
+          </div>
+          <div class="brand-subtitle">Offline BLE Mesh ➔ Internet Gateway Ingestion</div>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <!-- Live SSE Status Indicator -->
+        <div id="live-status" class="live-status-pill">
+          <span class="pulse-dot"></span>
+          <span id="live-status-text">LIVE MESH STREAM</span>
+        </div>
+
+        <!-- Audio Alert Mute/Unmute -->
+        <button id="btn-audio-toggle" class="btn btn-icon-toggle active" title="Toggle Emergency Siren / Audio Ping" aria-label="Audio alert toggle">
+          🔊
+        </button>
+
+        <!-- Trigger Realistic Simulated SOS -->
+        <button id="btn-simulate-sos" class="btn btn-simulate" title="Simulate multi-hop BLE SOS relayed through gateway">
+          <span>🚨</span> Simulate Mesh SOS
+        </button>
+
+        <!-- Clear Incidents -->
+        <button id="btn-clear-all" class="btn btn-secondary" title="Clear all stored incidents">
+          Clear All
+        </button>
+
+        <!-- Public Landing Link -->
+        <a href="/" class="btn btn-secondary" target="_blank">
+          Public Site ↗
+        </a>
+      </div>
+    </header>
+
+    <!-- KPI Metrics Banner -->
+    <section class="kpi-banner">
+      <div class="kpi-item">
+        <span class="kpi-label">Active SOS Alerts</span>
+        <div class="kpi-value-group">
+          <span id="kpi-active-count" class="kpi-value danger">0</span>
+        </div>
+      </div>
+      <div class="kpi-item">
+        <span class="kpi-label">Avg Mesh Hops</span>
+        <div class="kpi-value-group">
+          <span id="kpi-avg-hops" class="kpi-value accent">0.0</span>
+        </div>
+      </div>
+      <div class="kpi-item">
+        <span class="kpi-label">Active Mesh Nodes</span>
+        <div class="kpi-value-group">
+          <span id="kpi-active-nodes" class="kpi-value">0</span>
+        </div>
+      </div>
+      <div class="kpi-item">
+        <span class="kpi-label">Resolved / Deleted</span>
+        <div class="kpi-value-group">
+          <span id="kpi-resolved-count" class="kpi-value success">0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Workspace: Map on Left, Feed on Right -->
+    <main class="workspace-grid">
+      <!-- Interactive Leaflet Map -->
+      <section class="map-container" id="map-wrapper">
+        <div id="map"></div>
+
+        <!-- Floating Map Controls -->
+        <div class="map-floating-overlay">
+          <div class="map-control-card">
+            <span>📍 Active GPS Pins (<span id="map-pin-count">0</span>)</span>
+            <button id="btn-fit-pins" class="btn-map-action" title="Fit all active emergency pins in view">Fit All</button>
+            <button id="btn-toggle-rings" class="btn-map-action" title="Toggle accuracy radius circles">Rings</button>
+            
+            <div class="map-style-toggle-group" id="map-style-switcher">
+              <button id="btn-style-topo" class="btn-map-style active" data-style="topo" title="OpenTopoMap: High-Contrast Contours, Elevation & Cliffs">⛰️ Topo Relief</button>
+              <button id="btn-style-tactical" class="btn-map-style" data-style="tactical" title="Tactical Dark Navigation (High Contrast)">🌙 Dark Mode</button>
+              <button id="btn-style-vivid" class="btn-map-style" data-style="vivid" title="Vivid OpenStreetMap Vector Navigation">🗺️ Vivid OSM</button>
+              <button id="btn-style-satellite" class="btn-map-style" data-style="satellite" title="Esri High-Resolution Satellite Imagery">🛰️ Satellite</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Incident Queue & Triage Sidebar -->
+      <aside class="sidebar-panel">
+        <div class="sidebar-header">
+          <div class="sidebar-title-row">
+            <div class="sidebar-title">
+              Emergency Incidents
+              <span id="sidebar-count-badge" class="badge-count">0</span>
+            </div>
+          </div>
+
+          <div class="search-wrapper">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="incident-search" class="search-input" placeholder="Search Node ID, message, condition..." />
+          </div>
+
+          <div class="filter-tabs">
+            <button class="filter-tab active" data-filter="ACTIVE">Active SOS</button>
+            <button class="filter-tab" data-filter="ALL">All Incidents</button>
+            <button class="filter-tab" data-filter="RESOLVED">Resolved</button>
+          </div>
+        </div>
+
+        <!-- Scrollable Cards Feed -->
+        <div class="incident-feed-list" id="incident-list">
+          <div class="empty-feed">
+            <div class="icon">📡</div>
+            <p><strong>No active emergency alerts</strong></p>
+            <p style="font-size: 0.75rem;">Connected to MeshRoute Gateway. Any SOS relayed by a mesh phone will instantly appear here.</p>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Inspector Modal / Drawer -->
+  <div id="inspector-modal" class="modal-backdrop">
+    <div class="inspector-modal" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>🔍</span> Incident Deep Inspector
+        </div>
+        <button id="btn-close-modal" class="btn-close-modal" aria-label="Close modal">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body-content">
+        <!-- Injected dynamically via JS -->
+      </div>
+      <div class="modal-footer">
+        <button id="btn-modal-resolve" class="btn btn-popup-resolve">Mark Resolved</button>
+        <button id="btn-modal-delete" class="btn btn-popup-delete">Delete Incident</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Alert Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Modular Google Maps Subsystem -->
+  <script src="/map/mapConfig.js"></script>
+  <script src="/map/utils.js"></script>
+  <script src="/map/locationManager.js"></script>
+  <script src="/map/routeManager.js"></script>
+  <script src="/map/markerManager.js"></script>
+  <script src="/map/mapControls.js"></script>
+  <script src="/map/mapView.js"></script>
+
+  <!-- Emergency Dispatch Application Logic & Real-Time Sync -->
+  <script src="/dashboard.js"></script>
+</body>
+</html>

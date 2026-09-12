@@ -10,3 +10,7 @@ captures
 .externalNativeBuild
 .cxx
 *.apk
+.env
+.env.*
+!.env.example
+node_modules/

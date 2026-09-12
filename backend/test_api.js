@@ -1,11 +1,16 @@
 /**
- * MeshRoute Backend Automated Validation Suite (Phase 9)
- * Tests all 5 layers defined in testing-guide.md §Phase 9:
- * 1. Direct API Ingestion
- * 2. Duplicate Suppression & Idempotent ACK
- * 3. Malformed Packet Validation Error
- * 4. Stored Incident Retrieval with Decrypted Emergency Data
- * 5. Concurrent Submissions Handling
+ * MeshRoute Backend Automated Validation Suite (Phase 9 + Dashboard Expansion)
+ * Tests all layers:
+ * 1. Health check
+ * 2. Direct API Ingestion
+ * 3. Duplicate Suppression & Idempotent ACK
+ * 4. Malformed Packet Validation Error
+ * 5. Stored Incident Retrieval with Decrypted Emergency Data
+ * 6. Concurrent Submissions Handling
+ * 7. Incident Resolution (POST /api/sos/:id/resolve)
+ * 8. Incident Deletion (DELETE /api/sos/:id)
+ * 9. Mesh SOS Simulation (POST /api/sos/simulate)
+ * 10. Real-time Event Streaming (GET /api/sos/stream)
  */
 
 const http = require('http');
@@ -69,7 +74,7 @@ function assert(condition, message) {
 }
 
 async function runTests() {
-  console.log('🧪 Starting Phase 9 Backend Test Suite...\n');
+  console.log('🧪 Starting MeshRoute Backend Test Suite (with Dashboard API expansion)...\n');
 
   await new Promise(resolve => server.listen(TEST_PORT, resolve));
 
@@ -132,7 +137,7 @@ async function runTests() {
     // Test 4: Malformed Packet Rejection (Layer 3)
     // -------------------------------------------------------------
     console.log('\n[Test 4] Layer 3: Malformed Packet Validation');
-    const badPacket = { message_id: 'BAD-123' }; // missing required fields
+    const badPacket = { message_id: 'BAD-123' };
     const resBad = await request('POST', '/api/sos', badPacket);
     assert(resBad.statusCode === 400, 'Malformed packet returns 400 Bad Request');
     assert(resBad.body.error !== undefined, 'Clear validation error returned');
@@ -165,7 +170,76 @@ async function runTests() {
     const codes = [raceRes1.statusCode, raceRes2.statusCode].sort();
     assert(codes[0] === 200 && codes[1] === 201, 'One request created incident (201) and concurrent duplicate acknowledged (200)');
 
-    console.log('\n🎉 ALL PHASE 9 BACKEND TESTS PASSED!\n');
+    // -------------------------------------------------------------
+    // Test 7: Incident Resolution (POST /api/sos/:id/resolve)
+    // -------------------------------------------------------------
+    console.log('\n[Test 7] Dashboard API: Resolve Incident');
+    const resResolve = await request('POST', `/api/sos/${incidentId}/resolve`);
+    assert(resResolve.statusCode === 200, 'POST /api/sos/:id/resolve returns 200 OK');
+    assert(resResolve.body.status === 'RESOLVED', 'Status updated to RESOLVED');
+    assert(resResolve.body.incident.resolved_at !== undefined, 'Resolution timestamp recorded');
+
+    // -------------------------------------------------------------
+    // Test 8: Incident Deletion (DELETE /api/sos/:id)
+    // -------------------------------------------------------------
+    console.log('\n[Test 8] Dashboard API: Delete Incident');
+    const resDelete = await request('DELETE', `/api/sos/${incidentId}`);
+    assert(resDelete.statusCode === 200, 'DELETE /api/sos/:id returns 200 OK');
+    assert(resDelete.body.deleted === true, 'Incident deletion flag is true');
+
+    const resCheckDeleted = await request('GET', `/api/sos/${incidentId}`);
+    assert(resCheckDeleted.statusCode === 404, 'GET deleted incident returns 404 Not Found');
+
+    // -------------------------------------------------------------
+    // Test 9: Simulation API (POST /api/sos/simulate)
+    // -------------------------------------------------------------
+    console.log('\n[Test 9] Dashboard API: Simulation Endpoint');
+    const resSim = await request('POST', '/api/sos/simulate', {
+      sender_name: 'Simulated Climber',
+      message: 'Belay rope slipped, anchored on cliff ledge',
+      medical_info: 'Rope burns',
+      battery_percent: 55,
+      latitude: 36.12,
+      longitude: -112.10
+    });
+    assert(resSim.statusCode === 201, 'POST /api/sos/simulate returns 201 Created');
+    assert(resSim.body.simulated === true, 'Simulation flag is true');
+    assert(resSim.body.incident.decrypted_payload.sender_name === 'Simulated Climber', 'Simulated payload decrypted correctly');
+
+    // -------------------------------------------------------------
+    // Test 10: Real-time SSE Stream Connectivity (GET /api/sos/stream)
+    // -------------------------------------------------------------
+    console.log('\n[Test 10] Dashboard API: SSE Stream Connection');
+    const sseCheck = await new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port: TEST_PORT,
+        path: '/api/sos/stream',
+        method: 'GET'
+      }, res => {
+        assert(res.statusCode === 200, 'GET /api/sos/stream returns 200 OK');
+        assert(res.headers['content-type'] === 'text/event-stream', 'Content-Type is text/event-stream');
+        res.on('data', chunk => {
+          const text = chunk.toString();
+          if (text.includes('connected')) {
+            req.destroy();
+            resolve(true);
+          }
+        });
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    // Test 11: Google Maps Configuration (GET /api/config)
+    // -------------------------------------------------------------
+    console.log('\n[Test 11] Dashboard API: Google Maps Configuration');
+    const configRes = await request('GET', '/api/config');
+    assert(configRes.statusCode === 200, 'GET /api/config returns 200 OK');
+    assert(configRes.body.map_engine === 'google', 'Map engine is configured as google');
+    assert(configRes.body.google_maps_api_key !== undefined, 'Google Maps API key field is present');
+    assert(configRes.body.map_style_url !== undefined, 'Map style URL is present');
+
+    console.log('\n🎉 ALL BACKEND & DASHBOARD API TESTS PASSED!\n');
   } finally {
     server.close();
   }
