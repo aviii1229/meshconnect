@@ -41,7 +41,12 @@ class MeshRouteManager private constructor(context: Context) {
     )
     val locationProvider: LocationProvider = AndroidGpsLocationProvider(context.applicationContext)
     val networkMonitor: NetworkMonitor = AndroidNetworkMonitor(context.applicationContext)
-    val gatewayUploader: GatewayUploader = GatewayUploader(forwardStore, networkMonitor)
+    val gatewayUploader: GatewayUploader = GatewayUploader(
+        forwardStore = forwardStore,
+        networkMonitor = networkMonitor,
+        initialBackendUrl = context.getSharedPreferences("meshroute_prefs", Context.MODE_PRIVATE)
+            .getString("custom_backend_url", GatewayUploader.DEFAULT_BACKEND_URL) ?: GatewayUploader.DEFAULT_BACKEND_URL
+    )
 
     companion object {
         @Volatile

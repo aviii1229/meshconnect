@@ -1,61 +1,16 @@
 /**
- * User Geolocation Manager Module for Google Maps
- * Uses native Navigator Geolocation API (Zero Google Location API dependencies).
- * Renders pulsing blue GPS beacon and accuracy radius circle on Google Maps.
+ * User Geolocation Manager Module for Leaflet
+ * Uses native Navigator Geolocation API (Zero external location service dependencies).
+ * Renders pulsing blue GPS beacon and accuracy radius circle on Leaflet map.
  */
 (function (global) {
   'use strict';
 
-  function UserLocationOverlay(latLng, element, map) {
-    this.latLng = latLng;
-    this.element = element;
-    this.map = map;
-    this.setMap(map);
-  }
-
-  function setupUserLocationOverlayClass() {
-    if (!global.google?.maps?.OverlayView) return;
-    UserLocationOverlay.prototype = new global.google.maps.OverlayView();
-
-    UserLocationOverlay.prototype.onAdd = function () {
-      const panes = this.getPanes();
-      if (panes && panes.overlayMouseTarget) {
-        panes.overlayMouseTarget.appendChild(this.element);
-      }
-    };
-
-    UserLocationOverlay.prototype.draw = function () {
-      const projection = this.getProjection();
-      if (!projection || !this.element || !this.latLng) return;
-
-      const point = projection.fromLatLngToDivPixel(this.latLng);
-      if (point) {
-        this.element.style.position = 'absolute';
-        this.element.style.left = point.x + 'px';
-        this.element.style.top = point.y + 'px';
-        this.element.style.transform = 'translate(-50%, -50%)';
-        this.element.style.zIndex = '150';
-      }
-    };
-
-    UserLocationOverlay.prototype.onRemove = function () {
-      if (this.element && this.element.parentNode) {
-        this.element.parentNode.removeChild(this.element);
-      }
-    };
-
-    UserLocationOverlay.prototype.setPosition = function (latLng) {
-      this.latLng = latLng;
-      this.draw();
-    };
-  }
-
   function LocationManager(mapView) {
     this.mapView = mapView;
     this.map = null;
-    this.overlay = null;
+    this.userMarker = null;
     this.accuracyCircle = null;
-    this.element = null;
     this.watchId = null;
     this.isTracking = false;
     this.lastPosition = null;
@@ -63,7 +18,6 @@
 
   LocationManager.prototype.init = function (mapInstance) {
     this.map = mapInstance;
-    setupUserLocationOverlayClass();
   };
 
   /**
@@ -94,38 +48,39 @@
 
     const handleSuccess = (position) => {
       const { latitude, longitude, accuracy } = position.coords;
-      const latLng = { lat: latitude, lng: longitude };
+      const latLng = [latitude, longitude];
       self.lastPosition = latLng;
       self.updateLocationDisplay(latLng, accuracy);
 
-      if (follow) {
-        self.centerOnPosition(latLng);
+      if (follow && self.map) {
+        self.map.flyTo(latLng, Math.max(self.map.getZoom(), 14), {
+          animate: true,
+          duration: 1.2
+        });
       }
 
-      if (onLocation) onLocation(position);
+      if (onLocation) onLocation(latLng, accuracy, position);
     };
 
     const handleError = (error) => {
-      let message = 'Unable to retrieve your location.';
+      let msg = 'Unable to retrieve your location.';
       switch (error.code) {
         case error.PERMISSION_DENIED:
-          message = 'Location access was denied. Please allow location permissions in your browser.';
+          msg = 'Location permission was denied. Please allow location access in your browser.';
           break;
         case error.POSITION_UNAVAILABLE:
-          message = 'GPS location information is currently unavailable.';
+          msg = 'GPS location information is currently unavailable.';
           break;
         case error.TIMEOUT:
-          message = 'Location request timed out. Please try again.';
+          msg = 'Location request timed out.';
           break;
       }
-      console.warn('LocationManager:', message);
-      if (onError) onError(new Error(message));
+      const err = new Error(msg);
+      err.code = error.code;
+      if (onError) onError(err);
     };
 
     if (continuous) {
-      if (this.watchId) {
-        navigator.geolocation.clearWatch(this.watchId);
-      }
       this.isTracking = true;
       this.watchId = navigator.geolocation.watchPosition(handleSuccess, handleError, geoOptions);
     } else {
@@ -134,75 +89,80 @@
   };
 
   /**
-   * Update or create blue dot beacon overlay and accuracy circle
+   * Update or create the pulsing blue location marker and accuracy circle
    */
-  LocationManager.prototype.updateLocationDisplay = function (latLng, accuracy = 0) {
-    if (!this.map || !latLng) return;
-    const googleLatLng = new google.maps.LatLng(latLng.lat, latLng.lng);
+  LocationManager.prototype.updateLocationDisplay = function (latLng, accuracy) {
+    if (!this.map || !global.L) return;
 
-    // 1. Animated Blue Pulse DOM Marker
-    if (!this.overlay) {
-      const el = document.createElement('div');
-      el.className = 'user-location-marker';
-      el.innerHTML = `
-        <div class="user-location-pulse"></div>
-        <div class="user-location-dot"></div>
+    if (!this.userMarker) {
+      const iconHtml = `
+        <div class="user-location-marker-wrapper">
+          <div class="user-location-pulse"></div>
+          <div class="user-location-dot"></div>
+        </div>
       `;
-      this.element = el;
-      this.overlay = new UserLocationOverlay(googleLatLng, el, this.map);
+
+      const divIcon = global.L.divIcon({
+        className: 'mesh-user-location-icon',
+        html: iconHtml,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+      });
+
+      this.userMarker = global.L.marker(latLng, {
+        icon: divIcon,
+        zIndexOffset: 1500,
+        title: 'Your Current Location'
+      }).addTo(this.map);
     } else {
-      this.overlay.setPosition(googleLatLng);
+      this.userMarker.setLatLng(latLng);
     }
 
-    // 2. Accuracy Circle
-    if (!this.accuracyCircle) {
-      this.accuracyCircle = new google.maps.Circle({
-        map: this.map,
-        center: googleLatLng,
-        radius: accuracy,
-        fillColor: '#0ea5e9',
-        fillOpacity: 0.12,
-        strokeColor: '#0ea5e9',
-        strokeOpacity: 0.6,
-        strokeWeight: 1.5,
-        clickable: false
-      });
-    } else {
-      this.accuracyCircle.setCenter(googleLatLng);
-      this.accuracyCircle.setRadius(accuracy);
+    if (accuracy && accuracy > 0) {
+      if (!this.accuracyCircle) {
+        this.accuracyCircle = global.L.circle(latLng, {
+          radius: accuracy,
+          color: '#38bdf8',
+          fillColor: '#38bdf8',
+          fillOpacity: 0.12,
+          weight: 1.5,
+          dashArray: '2, 4'
+        }).addTo(this.map);
+      } else {
+        this.accuracyCircle.setLatLng(latLng);
+        this.accuracyCircle.setRadius(accuracy);
+      }
     }
   };
 
-  /**
-   * Smoothly center camera on user position
-   */
-  LocationManager.prototype.centerOnPosition = function (latLng, zoom = 14) {
-    if (!this.map || !latLng) return;
-    const googleLatLng = new google.maps.LatLng(latLng.lat, latLng.lng);
-    this.map.panTo(googleLatLng);
-    if (this.map.getZoom() < zoom) {
-      this.map.setZoom(zoom);
+  LocationManager.prototype.centerOnPosition = function (latLng) {
+    if (this.map && latLng) {
+      this.map.flyTo(latLng, Math.max(this.map.getZoom(), 14), {
+        animate: true,
+        duration: 1.0
+      });
     }
   };
 
   LocationManager.prototype.stopTracking = function () {
-    if (this.watchId) {
+    if (this.watchId !== null) {
       navigator.geolocation.clearWatch(this.watchId);
       this.watchId = null;
     }
     this.isTracking = false;
   };
 
-  LocationManager.prototype.destroy = function () {
+  LocationManager.prototype.clear = function () {
     this.stopTracking();
-    if (this.overlay) {
-      this.overlay.setMap(null);
-      this.overlay = null;
+    if (this.userMarker && this.map) {
+      this.map.removeLayer(this.userMarker);
+      this.userMarker = null;
     }
-    if (this.accuracyCircle) {
-      this.accuracyCircle.setMap(null);
+    if (this.accuracyCircle && this.map) {
+      this.map.removeLayer(this.accuracyCircle);
       this.accuracyCircle = null;
     }
+    this.lastPosition = null;
   };
 
   global.LocationManager = LocationManager;

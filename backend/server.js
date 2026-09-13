@@ -174,7 +174,14 @@ function sendJson(res, statusCode, data) {
 }
 
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  // Normalize consecutive slashes and strip trailing slash (except for root '/')
+  if (url.pathname.length > 1) {
+    url.pathname = url.pathname.replace(/\/+/g, '/').replace(/\/$/, '');
+  }
+
+  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  console.log(`[HTTP ${req.method}] ${req.url} (path: ${url.pathname}) from ${clientIp}`);
 
   // Handle CORS Preflight
   if (req.method === 'OPTIONS') {
@@ -202,10 +209,11 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && url.pathname === '/api/config') {
     loadEnv();
     return sendJson(res, 200, {
-      map_engine: 'google',
+      map_engine: 'leaflet',
+      leaflet: true,
       google_maps_api_key: process.env.GOOGLE_MAPS_API_KEY || '',
       google_maps_map_id: process.env.GOOGLE_MAPS_MAP_ID || '',
-      map_style_url: process.env.MAP_STYLE_URL || 'terrain'
+      map_style_url: process.env.MAP_STYLE_URL || 'tactical'
     });
   }
 
@@ -514,8 +522,8 @@ const server = http.createServer((req, res) => {
     return sendJson(res, 200, events);
   }
 
-  // POST /api/sos
-  if (req.method === 'POST' && url.pathname === '/api/sos') {
+  // POST /api/sos (Accepts /api/sos, /api/sos/api/sos, /sos, or /dashboard/api/sos)
+  if (req.method === 'POST' && (url.pathname === '/api/sos' || url.pathname.endsWith('/api/sos') || url.pathname === '/sos')) {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
@@ -627,6 +635,7 @@ const server = http.createServer((req, res) => {
   }
 
   // 404 for unknown endpoints
+  console.warn(`[HTTP 404] No route found for ${req.method} ${url.pathname}`);
   sendJson(res, 404, { error: 'Not found', path: url.pathname });
 });
 

@@ -48,8 +48,9 @@ class SosNotificationTest {
         // Verify decryption matches
         val decryptedJson = CryptoManager.decryptString(packet.payload, KeyManager.defaultEmergencyKey)
         val extracted = EmergencyPayload.fromJson(decryptedJson)
+        assertNotNull(extracted)
 
-        assertEquals(messageText, extracted.message)
+        assertEquals(messageText, extracted!!.message)
         assertEquals(sender, extracted.senderName)
         assertEquals(medical, extracted.medicalInfo)
         assertEquals(battery, extracted.batteryPercent)
@@ -59,7 +60,7 @@ class SosNotificationTest {
         val lonStr = String.format(Locale.US, "%.5f", packet.location!!.longitude)
         assertEquals("37.77493", latStr)
         assertEquals("-122.41942", lonStr)
-        assertEquals("📍 37.77493, -122.41942 (±8m)", "📍 $latStr, $lonStr (±${packet.location!!.accuracy!!.toInt()}m)")
+        assertEquals("📍 37.77493, -122.41942 (±8m)", "📍 $latStr, $lonStr (±${packet.location!!.accuracy.toInt()}m)")
     }
 
     @Test
@@ -87,7 +88,8 @@ class SosNotificationTest {
         assertNull(packet.location)
         val decryptedJson = CryptoManager.decryptString(packet.payload, KeyManager.defaultEmergencyKey)
         val extracted = EmergencyPayload.fromJson(decryptedJson)
-        assertEquals("Bob", extracted.senderName)
-        assertEquals("Trapped in cave, need search and rescue", extracted.message)
+        assertNotNull(extracted)
+        assertEquals("Bob", extracted!!.senderName)
+        assertEquals("Trapped in cave, need search and rescue", extracted!!.message)
     }
 }

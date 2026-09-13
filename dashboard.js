@@ -119,13 +119,14 @@
   }
 
   /**
-   * Initialize Google Maps JavaScript API engine
+   * Initialize Leaflet Mapping Subsystem
    */
   async function initMap() {
     mapView = new MapView('map', {
-      center: { lat: 36.1069, lng: -112.1129 },
+      center: [36.1069, -112.1129],
       zoom: 12
     });
+    state.mapView = mapView;
     await mapView.init();
   }
   const initMapLibre = initMap;
@@ -142,7 +143,7 @@
 
   /**
    * Generate Popup HTML content for Incident
-   * Shows: Sender ID, Timestamp, Status (New/Acknowledged/Resolved), Link to open Detail view
+   * Shows: Sender ID, Timestamp, Status, Open in Google Maps button, Details & Actions
    */
   function buildPopupContent(incident) {
     const status = getNormalizedStatus(incident);
@@ -154,6 +155,10 @@
     const hopChain = (incident.hop_path || [senderId, incident.gateway_node]).join(' ➔ ');
     const receivedTime = incident.received_at || Date.now();
     const formattedDate = new Date(receivedTime).toLocaleString();
+
+    const lat = incident.location?.latitude;
+    const lng = incident.location?.longitude;
+    const googleMapsUrl = (lat !== undefined && lng !== undefined) ? `https://www.google.com/maps?q=${lat},${lng}` : null;
 
     let statusBadgeClass = 'status-new';
     let statusLabel = '🚨 NEW SOS';
@@ -177,6 +182,15 @@
         <div class="popup-msg-box">
           <p>"${escapeHtml(msg)}"</p>
         </div>
+
+        <!-- Direct Individual Pin Open in Google Maps Link -->
+        ${googleMapsUrl ? `
+        <div style="margin-bottom: 10px;">
+          <a href="${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="btn-popup-google-maps" title="Open GPS coordinates directly in Google Maps">
+            <span style="font-size: 0.95rem;">📍</span> Open in Google Maps ↗
+          </a>
+        </div>
+        ` : ''}
 
         <div class="popup-details">
           <div class="popup-detail-item">
@@ -305,7 +319,13 @@
    */
   function fitAllPins() {
     if (!mapView || !mapView.markerManager) return;
+    if (mapView.markerManager.markers.size === 0) {
+      mapView.flyTo([36.1069, -112.1129], 12);
+      showToast('No active emergency pins on map.', 'info');
+      return;
+    }
     mapView.markerManager.fitAll({ padding: 70 });
+    showToast(`Fitted viewport to ${mapView.markerManager.markers.size} active pin(s)`, 'info');
   }
 
   /**
@@ -317,7 +337,8 @@
       mapView.markerManager.setAccuracyRingsVisible(state.showRings);
     }
     el.btnToggleRings.style.opacity = state.showRings ? '1' : '0.5';
-    showToast(state.showRings ? 'GPS Accuracy Rings: Shown' : 'GPS Accuracy Rings: Hidden');
+    el.btnToggleRings.classList.toggle('active', state.showRings);
+    showToast(state.showRings ? 'GPS Accuracy Rings: Visible' : 'GPS Accuracy Rings: Hidden');
   }
 
   /**
@@ -429,7 +450,7 @@
             <span class="card-tag">📡 ${escapeHtml(inc.gateway_node || 'Direct')}</span>
             <span class="card-tag" style="color: ${isResolved ? '#10b981' : (isAck ? '#f59e0b' : '#f43f5e')}">${status}</span>
             ${battery !== undefined ? `<span class="card-tag ${isLowBattery ? 'battery-low' : ''}">🔋 ${battery}%</span>` : ''}
-            ${inc.location ? `<span class="card-tag">📍 GPS (±${inc.location.accuracy || 0}m)</span>` : ''}
+            ${inc.location ? `<a href="https://www.google.com/maps?q=${inc.location.latitude},${inc.location.longitude}" target="_blank" rel="noopener noreferrer" class="btn-card-google-maps" title="Open GPS coordinates in Google Maps" onclick="event.stopPropagation();">📍 Maps ↗</a>` : ''}
           </div>
 
           <div class="card-actions">
@@ -460,22 +481,10 @@
       const lat = incident.location.latitude;
       const lng = incident.location.longitude;
 
-      mapView.flyTo({ lat, lng }, 14);
+      mapView.flyTo([lat, lng], 14);
 
       if (mapView.markerManager) {
-        const entry = mapView.markerManager.getMarker(incidentId);
-        if (entry && mapView.map) {
-          if (entry.infoWindow) {
-            if (mapView.markerManager.activeInfoWindow) {
-              mapView.markerManager.activeInfoWindow.close();
-            }
-            entry.infoWindow.setPosition(entry.googleLatLng || new google.maps.LatLng(lat, lng));
-            entry.infoWindow.open({ map: mapView.map });
-            mapView.markerManager.activeInfoWindow = entry.infoWindow;
-          } else if (entry.popup) {
-            entry.popup.addTo(mapView.map);
-          }
-        }
+        mapView.markerManager.openPopup(incidentId);
       }
     }
   }
@@ -530,7 +539,13 @@
           <div><strong>Sender:</strong> ${escapeHtml(incident.decrypted_payload?.sender_name || 'N/A')}</div>
           <div><strong>Medical:</strong> ${escapeHtml(incident.decrypted_payload?.medical_info || 'None')}</div>
           <div><strong>Battery:</strong> ${incident.decrypted_payload?.battery_percent !== undefined ? incident.decrypted_payload.battery_percent + '%' : 'N/A'}</div>
-          ${incident.location ? `<div><strong>GPS:</strong> ${incident.location.latitude}, ${incident.location.longitude} (±${incident.location.accuracy || 0}m)</div>` : ''}
+          ${incident.location ? `
+            <div style="margin-top: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+              <div><strong>GPS:</strong> ${incident.location.latitude}, ${incident.location.longitude} (±${incident.location.accuracy || 0}m)</div>
+              <a href="https://www.google.com/maps?q=${incident.location.latitude},${incident.location.longitude}" target="_blank" rel="noopener noreferrer" class="btn-card-google-maps" style="font-size: 0.78rem; padding: 4px 10px;">
+                📍 Open in Google Maps ↗
+              </a>
+            </div>` : ''}
         </div>
       </div>
 
@@ -850,22 +865,43 @@
     // Clear All
     el.btnClearAll.addEventListener('click', clearAllIncidents);
 
+    // Prevent Leaflet from intercepting clicks/drags on floating overlay
+    const floatingOverlay = document.querySelector('.map-floating-overlay');
+    if (floatingOverlay && window.L && window.L.DomEvent) {
+      window.L.DomEvent.disableClickPropagation(floatingOverlay);
+      window.L.DomEvent.disableScrollPropagation(floatingOverlay);
+    }
+
     // Fit Pins
-    el.btnFitPins.addEventListener('click', fitAllPins);
+    el.btnFitPins.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      fitAllPins();
+    });
 
     // Toggle Rings
-    el.btnToggleRings.addEventListener('click', toggleAccuracyRings);
+    el.btnToggleRings.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      toggleAccuracyRings();
+    });
 
-    // Map Style Preset Switching (Vivid OSM, Tactical Dark, Bright Day)
+    // Map Style Preset Switching (Topo, Dark, Vivid, Satellite)
     const styleButtons = document.querySelectorAll('.btn-map-style');
     styleButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
+      if (window.L && window.L.DomEvent) {
+        window.L.DomEvent.disableClickPropagation(btn);
+      }
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
         const presetId = btn.dataset.style;
-        if (!presetId || !state.mapView) return;
+        const targetView = mapView || state.mapView;
+        if (!presetId || !targetView) return;
         styleButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        state.mapView.changePreset(presetId);
-        try { localStorage.setItem('mesh_map_style_preset', presetId); } catch (e) {}
+        targetView.setPreset(presetId);
+        try { localStorage.setItem('mesh_map_style_preset', presetId); } catch (err) {}
       });
     });
 
@@ -873,16 +909,19 @@
     try {
       const savedPreset = localStorage.getItem('mesh_map_style_preset');
       const validPresets = ['topo', 'tactical', 'vivid', 'satellite'];
+      const targetView = mapView || state.mapView;
       if (savedPreset && validPresets.includes(savedPreset)) {
         const targetBtn = document.querySelector(`.btn-map-style[data-style="${savedPreset}"]`);
         if (targetBtn) {
           styleButtons.forEach(b => b.classList.remove('active'));
           targetBtn.classList.add('active');
-          state.mapView.onReady(mv => mv.changePreset(savedPreset));
+          if (targetView) {
+            targetView.onReady(mv => mv.setPreset(savedPreset));
+          }
         }
       } else {
         // Set active button to match current preset
-        const currentId = (window.MapConfig && window.MapConfig.currentPresetId) || 'topo';
+        const currentId = (window.MapConfig && window.MapConfig.currentPresetId) || 'tactical';
         const activeBtn = document.querySelector(`.btn-map-style[data-style="${currentId}"]`);
         if (activeBtn) {
           styleButtons.forEach(b => b.classList.remove('active'));

@@ -1,5 +1,5 @@
 /**
- * Map Utilities & Geometry Helpers for Google Maps Integration
+ * Map Utilities & Geometry Helpers for Leaflet Integration
  */
 (function (global) {
   'use strict';
@@ -15,113 +15,114 @@
     },
 
     /**
-     * Normalize various coordinate formats to Google Maps { lat, lng } literal
+     * Normalize coordinate to Leaflet [lat, lng] array
      */
-    toGoogleLatLng: function (coord) {
+    toLatLngArray: function (coord) {
       if (!coord) return null;
+
+      // Leaflet LatLng object or object with lat/lng
       if (typeof coord === 'object') {
-        if (typeof coord.lat === 'function' && typeof coord.lng === 'function') {
-          return { lat: coord.lat(), lng: coord.lng() };
-        }
-        const lat = coord.latitude !== undefined ? Number(coord.latitude) : (coord.lat !== undefined ? Number(coord.lat) : undefined);
-        const lng = coord.longitude !== undefined ? Number(coord.longitude) : (coord.lng !== undefined ? Number(coord.lng) : (coord.lon !== undefined ? Number(coord.lon) : undefined));
+        const lat = coord.lat !== undefined ? Number(coord.lat) : (coord.latitude !== undefined ? Number(coord.latitude) : undefined);
+        const lng = coord.lng !== undefined ? Number(coord.lng) : (coord.longitude !== undefined ? Number(coord.longitude) : (coord.lon !== undefined ? Number(coord.lon) : undefined));
         if (lat !== undefined && lng !== undefined && this.isValidCoordinate(lat, lng)) {
-          return { lat, lng };
+          return [lat, lng];
         }
       }
+
+      // Array [lng, lat] or [lat, lng]
       if (Array.isArray(coord) && coord.length >= 2) {
-        // Check whether first value is lat or lng:
-        // By convention in GeoJSON it's [lng, lat], but some APIs provide [lat, lng].
-        // If coord[0] is within -90 to 90 and coord[1] is within -180 to 180:
-        // We support [lng, lat] (standard GIS) and [lat, lng]
-        let lng = Number(coord[0]);
-        let lat = Number(coord[1]);
-        if (Math.abs(lng) > 90 && Math.abs(lat) <= 90) {
-          // Definitely [lng, lat]
-          return { lat, lng };
+        let v0 = Number(coord[0]);
+        let v1 = Number(coord[1]);
+        // If v0 is clearly longitude (> 90 or < -90) and v1 is valid lat:
+        if (Math.abs(v0) > 90 && Math.abs(v1) <= 90) {
+          return [v1, v0]; // return [lat, lng]
         }
-        if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
-          // [lat, lng]
-          return { lat: lng, lng: lat };
+        // If v1 is clearly longitude (> 90 or < -90) and v0 is valid lat:
+        if (Math.abs(v1) > 90 && Math.abs(v0) <= 90) {
+          return [v0, v1]; // return [lat, lng]
         }
-        // Default to [lng, lat] as previously used in the system
-        return { lat, lng };
+        // Default assumption: [lat, lng]
+        return [v0, v1];
       }
+
       return null;
     },
 
     /**
-     * Normalize various coordinate formats to [lng, lat] array
+     * Normalize coordinate to { lat, lng } object
      */
-    toLngLat: function (coord) {
-      const g = this.toGoogleLatLng(coord);
-      return g ? [g.lng, g.lat] : null;
+    toLatLngObj: function (coord) {
+      const arr = this.toLatLngArray(coord);
+      return arr ? { lat: arr[0], lng: arr[1] } : null;
     },
 
     /**
-     * Compute google.maps.LatLngBounds for an array of coordinates
+     * Generate Google Maps URL for coordinates
+     */
+    toGoogleMapsUrl: function (coord) {
+      const arr = this.toLatLngArray(coord);
+      if (!arr) return '#';
+      return `https://www.google.com/maps?q=${arr[0]},${arr[1]}`;
+    },
+
+    /**
+     * Compute Leaflet LatLngBounds for an array of points
      */
     computeBounds: function (points) {
       if (!Array.isArray(points) || points.length === 0) return null;
-
-      if (global.google && global.google.maps && global.google.maps.LatLngBounds) {
-        const bounds = new global.google.maps.LatLngBounds();
-        let count = 0;
-        for (const pt of points) {
-          const latLng = this.toGoogleLatLng(pt);
-          if (latLng) {
-            bounds.extend(latLng);
-            count++;
-          }
-        }
-        return count > 0 ? bounds : null;
-      }
-
-      // Fallback coordinate rectangle
-      let minLng = Infinity, maxLng = -Infinity;
-      let minLat = Infinity, maxLat = -Infinity;
-      let validCount = 0;
+      const validPoints = [];
 
       for (const pt of points) {
-        const latLng = this.toGoogleLatLng(pt);
-        if (!latLng) continue;
-        if (latLng.lng < minLng) minLng = latLng.lng;
-        if (latLng.lng > maxLng) maxLng = latLng.lng;
-        if (latLng.lat < minLat) minLat = latLng.lat;
-        if (latLng.lat > maxLat) maxLat = latLng.lat;
-        validCount++;
+        const arr = this.toLatLngArray(pt);
+        if (arr) validPoints.push(arr);
       }
 
-      if (validCount === 0) return null;
-      return {
-        south: minLat,
-        west: minLng,
-        north: maxLat,
-        east: maxLng
-      };
+      if (validPoints.length === 0) return null;
+      if (global.L && global.L.latLngBounds) {
+        return global.L.latLngBounds(validPoints);
+      }
+
+      let minLat = Infinity, maxLat = -Infinity;
+      let minLng = Infinity, maxLng = -Infinity;
+
+      for (const [lat, lng] of validPoints) {
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+      }
+
+      return [[minLat, minLng], [maxLat, maxLng]];
     },
 
     /**
-     * Safe HTML escape
+     * Calculate Great Circle distance (Haversine formula in meters)
+     */
+    computeDistanceMeters: function (coord1, coord2) {
+      const p1 = this.toLatLngArray(coord1);
+      const p2 = this.toLatLngArray(coord2);
+      if (!p1 || !p2) return 0;
+
+      const R = 6371000; // Earth radius in meters
+      const dLat = (p2[0] - p1[0]) * Math.PI / 180;
+      const dLon = (p2[1] - p1[1]) * Math.PI / 180;
+      const lat1 = p1[0] * Math.PI / 180;
+      const lat2 = p2[0] * Math.PI / 180;
+
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    },
+
+    /**
+     * Safe HTML escaping
      */
     escapeHtml: function (str) {
-      if (!str) return '';
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-    },
-
-    /**
-     * Create DOM element with class and HTML
-     */
-    createElement: function (tag, className, innerHTML) {
-      const el = document.createElement(tag);
-      if (className) el.className = className;
-      if (innerHTML) el.innerHTML = innerHTML;
-      return el;
+      if (str === null || str === undefined) return '';
+      const div = document.createElement('div');
+      div.textContent = String(str);
+      return div.innerHTML;
     }
   };
 

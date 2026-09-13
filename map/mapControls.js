@@ -1,11 +1,12 @@
 /**
- * Custom Map Controls for Google Maps
+ * Custom Map Navigation Controls for Leaflet
  * Provides polished cyber-glassmorphic controls matching the existing MeshRoute theme:
  * - Zoom In (+)
  * - Zoom Out (-)
  * - My Location (🎯)
- * - Reset North / Bearing (🧭)
+ * - Reset North / View (🧭)
  * - Fullscreen toggle (⛶)
+ * Uses L.DomEvent.disableClickPropagation to guarantee clicks never get swallowed by Leaflet.
  */
 (function (global) {
   'use strict';
@@ -33,17 +34,23 @@
     container.setAttribute('role', 'toolbar');
     container.setAttribute('aria-label', 'Map navigation controls');
 
-    // 1. Zoom In
+    // Prevent Leaflet from intercepting clicks/drags on custom controls
+    if (global.L && global.L.DomEvent) {
+      global.L.DomEvent.disableClickPropagation(container);
+      global.L.DomEvent.disableScrollPropagation(container);
+    }
+
+    // 1. Zoom In (Smooth 0.5 step)
     const btnZoomIn = this.createButton('＋', 'Zoom in', () => {
       if (this.map) {
-        this.map.setZoom(this.map.getZoom() + 1);
+        this.map.zoomIn(0.5);
       }
     });
 
-    // 2. Zoom Out
+    // 2. Zoom Out (Smooth 0.5 step)
     const btnZoomOut = this.createButton('－', 'Zoom out', () => {
       if (this.map) {
-        this.map.setZoom(this.map.getZoom() - 1);
+        this.map.zoomOut(0.5);
       }
     });
 
@@ -70,15 +77,12 @@
       }
     });
 
-    // 4. Reset Bearing / North Compass
-    const btnCompass = this.createButton('🧭', 'Reset heading to North', () => {
-      if (this.map) {
-        if (typeof this.map.setHeading === 'function') {
-          this.map.setHeading(0);
-        }
-        if (typeof this.map.setTilt === 'function') {
-          this.map.setTilt(0);
-        }
+    // 4. Reset View / Fit Pins
+    const btnCompass = this.createButton('🧭', 'Reset view to emergency pins', () => {
+      if (this.mapView && this.mapView.markerManager && this.mapView.markerManager.markers.size > 0) {
+        this.mapView.markerManager.fitAll();
+      } else if (this.mapView) {
+        this.mapView.flyTo([36.1069, -112.1129], 12);
       }
     });
 
@@ -98,13 +102,11 @@
 
     document.addEventListener('fullscreenchange', () => {
       const isFull = !!document.fullscreenElement;
-      btnFullscreen.innerHTML = isFull ? '<span>🗗</span>' : '<span>⛶</span>';
-      btnFullscreen.setAttribute('title', isFull ? 'Exit fullscreen' : 'Toggle fullscreen');
-      setTimeout(() => {
-        if (this.map && global.google?.maps?.event) {
-          google.maps.event.trigger(this.map, 'resize');
-        }
-      }, 100);
+      btnFullscreen.innerHTML = isFull ? '✕' : '⛶';
+      btnFullscreen.title = isFull ? 'Exit fullscreen' : 'Toggle fullscreen';
+      if (this.map) {
+        setTimeout(() => this.map.invalidateSize(), 150);
+      }
     });
 
     container.appendChild(btnZoomIn);
@@ -117,25 +119,24 @@
     this.container = container;
   };
 
-  MapControls.prototype.createButton = function (icon, title, onClick) {
+  MapControls.prototype.createButton = function (html, title, onClick) {
     const btn = document.createElement('button');
+    btn.className = 'btn-custom-map-control';
     btn.type = 'button';
-    btn.className = 'map-ctrl-btn';
-    btn.innerHTML = `<span>${icon}</span>`;
+    btn.innerHTML = html;
     btn.title = title;
     btn.setAttribute('aria-label', title);
+
+    if (global.L && global.L.DomEvent) {
+      global.L.DomEvent.disableClickPropagation(btn);
+    }
+
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      e.preventDefault();
       onClick();
     });
     return btn;
-  };
-
-  MapControls.prototype.destroy = function () {
-    if (this.container) {
-      this.container.remove();
-      this.container = null;
-    }
   };
 
   global.MapControls = MapControls;

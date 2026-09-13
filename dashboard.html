@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/map/leaflet/leaflet.css" />
   <link rel="stylesheet" href="/dashboard.css" />
 </head>
 <body>
@@ -96,8 +97,8 @@
             <button id="btn-toggle-rings" class="btn-map-action" title="Toggle accuracy radius circles">Rings</button>
             
             <div class="map-style-toggle-group" id="map-style-switcher">
-              <button id="btn-style-topo" class="btn-map-style active" data-style="topo" title="OpenTopoMap: High-Contrast Contours, Elevation & Cliffs">⛰️ Topo Relief</button>
-              <button id="btn-style-tactical" class="btn-map-style" data-style="tactical" title="Tactical Dark Navigation (High Contrast)">🌙 Dark Mode</button>
+              <button id="btn-style-topo" class="btn-map-style" data-style="topo" title="OpenTopoMap: High-Contrast Contours, Elevation & Cliffs">⛰️ Topo Relief</button>
+              <button id="btn-style-tactical" class="btn-map-style active" data-style="tactical" title="Tactical Dark Navigation (High Contrast)">🌙 Dark Mode</button>
               <button id="btn-style-vivid" class="btn-map-style" data-style="vivid" title="Vivid OpenStreetMap Vector Navigation">🗺️ Vivid OSM</button>
               <button id="btn-style-satellite" class="btn-map-style" data-style="satellite" title="Esri High-Resolution Satellite Imagery">🛰️ Satellite</button>
             </div>
@@ -161,7 +162,10 @@
   <!-- Toast Alert Container -->
   <div id="toast-container" class="toast-container"></div>
 
-  <!-- Modular Google Maps Subsystem -->
+  <!-- Leaflet Open-Source Mapping Engine -->
+  <script src="/map/leaflet/leaflet.js"></script>
+
+  <!-- Modular Leaflet Subsystem -->
   <script src="/map/mapConfig.js"></script>
   <script src="/map/utils.js"></script>
   <script src="/map/locationManager.js"></script>

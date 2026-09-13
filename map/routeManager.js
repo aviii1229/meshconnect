@@ -1,7 +1,7 @@
 /**
- * Route & Geometry Rendering Manager for Google Maps
+ * Route & Geometry Rendering Manager for Leaflet
  * Renders high-contrast emergency polylines with casing, glowing accents,
- * and integrates with Google Maps DirectionsService for shortest emergency routes.
+ * and multi-hop mesh trajectory vectors.
  */
 (function (global) {
   'use strict';
@@ -11,7 +11,6 @@
     this.map = null;
     this.routePolyline = null;
     this.casingPolyline = null;
-    this.directionsService = null;
     this.currentRoute = null;
   }
 
@@ -20,20 +19,20 @@
   };
 
   /**
-   * Render a route path on Google Maps
-   * @param {Array<Object|Array>|Object} routeData Array of coordinates or GeoJSON LineString
+   * Render a route path on Leaflet map
+   * @param {Array<Object|Array>} routeData Array of coordinates [lat, lng] or { lat, lng }
    * @param {Object} options Visual styling options
    */
   RouteManager.prototype.setRoute = function (routeData, options = {}) {
-    if (!this.map || !routeData) return;
+    if (!this.map || !global.L || !routeData) return;
 
     this.clearRoute();
 
     const {
       color = '#00d4aa',
       casingColor = '#060b14',
-      width = 5,
-      casingWidth = 8,
+      width = 4,
+      casingWidth = 7,
       opacity = 0.9,
       fitBounds = true
     } = options;
@@ -46,121 +45,62 @@
 
     this.currentRoute = { path, options };
 
-    // 1. Casing / Shadow Polyline
-    this.casingPolyline = new google.maps.Polyline({
-      path: path,
-      map: this.map,
-      strokeColor: casingColor,
-      strokeOpacity: 0.8,
-      strokeWeight: casingWidth,
-      zIndex: 10
-    });
+    // 1. Casing / Shadow Polyline (Dark contrast backdrop)
+    this.casingPolyline = global.L.polyline(path, {
+      color: casingColor,
+      weight: casingWidth,
+      opacity: 0.85,
+      lineCap: 'round',
+      lineJoin: 'round'
+    }).addTo(this.map);
 
-    // 2. Main Route Polyline
-    this.routePolyline = new google.maps.Polyline({
-      path: path,
-      map: this.map,
-      strokeColor: color,
-      strokeOpacity: opacity,
-      strokeWeight: width,
-      zIndex: 11
-    });
+    // 2. Main Route Polyline (Vibrant cyan/emerald)
+    this.routePolyline = global.L.polyline(path, {
+      color: color,
+      weight: width,
+      opacity: opacity,
+      lineCap: 'round',
+      lineJoin: 'round',
+      dashArray: options.dashed ? '6, 8' : null
+    }).addTo(this.map);
 
     // Auto-fit route bounds if requested
     if (fitBounds && path.length > 0) {
-      const bounds = new google.maps.LatLngBounds();
-      for (const pt of path) {
-        bounds.extend(pt);
-      }
-      this.map.fitBounds(bounds, options.padding || 60);
-    }
-  };
-
-  /**
-   * Calculate and render shortest emergency route between two points
-   * Uses Google Maps DirectionsService
-   */
-  RouteManager.prototype.calculateEmergencyRoute = function (origin, destination, options = {}) {
-    if (!this.map) return Promise.reject(new Error('Map not initialized'));
-
-    if (!this.directionsService && global.google?.maps?.DirectionsService) {
-      this.directionsService = new google.maps.DirectionsService();
-    }
-
-    if (!this.directionsService) {
-      return Promise.reject(new Error('DirectionsService not available'));
-    }
-
-    const origLatLng = global.MapUtils.toGoogleLatLng(origin);
-    const destLatLng = global.MapUtils.toGoogleLatLng(destination);
-
-    if (!origLatLng || !destLatLng) {
-      return Promise.reject(new Error('Invalid origin or destination coordinates'));
-    }
-
-    const request = {
-      origin: origLatLng,
-      destination: destLatLng,
-      travelMode: options.travelMode || google.maps.TravelMode.DRIVING
-    };
-
-    return new Promise((resolve, reject) => {
-      this.directionsService.route(request, (result, status) => {
-        if (status === google.maps.DirectionsStatus.OK) {
-          const overviewPath = result.routes[0].overview_path;
-          this.setRoute(overviewPath, options);
-          resolve(result);
-        } else {
-          console.warn('RouteManager: Directions request failed:', status);
-          reject(new Error(`Directions request failed: ${status}`));
-        }
+      this.map.fitBounds(this.routePolyline.getBounds(), {
+        padding: [options.padding || 60, options.padding || 60],
+        animate: true
       });
-    });
+    }
   };
 
   /**
-   * Convert various coordinate formats to array of google.maps.LatLng
+   * Convert arbitrary coordinates array to Leaflet [lat, lng] array
    */
-  RouteManager.prototype.normalizeCoordinates = function (data) {
-    if (!data) return null;
+  RouteManager.prototype.normalizeCoordinates = function (rawCoords) {
+    if (!Array.isArray(rawCoords)) return null;
+    const normalized = [];
 
-    let points = [];
-    if (Array.isArray(data)) {
-      points = data;
-    } else if (data.type === 'Feature' && data.geometry && Array.isArray(data.geometry.coordinates)) {
-      points = data.geometry.coordinates;
-    } else if (data.type === 'LineString' && Array.isArray(data.coordinates)) {
-      points = data.coordinates;
+    for (const item of rawCoords) {
+      const arr = global.MapUtils.toLatLngArray(item);
+      if (arr) normalized.push(arr);
     }
 
-    const result = [];
-    for (const pt of points) {
-      const g = global.MapUtils.toGoogleLatLng(pt);
-      if (g) {
-        result.push(new google.maps.LatLng(g.lat, g.lng));
-      }
-    }
-    return result;
+    return normalized.length >= 2 ? normalized : null;
   };
 
   /**
-   * Remove the active route from the map
+   * Clear current route from map
    */
   RouteManager.prototype.clearRoute = function () {
-    if (this.routePolyline) {
-      this.routePolyline.setMap(null);
+    if (this.routePolyline && this.map) {
+      this.map.removeLayer(this.routePolyline);
       this.routePolyline = null;
     }
-    if (this.casingPolyline) {
-      this.casingPolyline.setMap(null);
+    if (this.casingPolyline && this.map) {
+      this.map.removeLayer(this.casingPolyline);
       this.casingPolyline = null;
     }
     this.currentRoute = null;
-  };
-
-  RouteManager.prototype.destroy = function () {
-    this.clearRoute();
-    this.directionsService = null;
   };
 
   global.RouteManager = RouteManager;

@@ -232,13 +232,13 @@ async function runTests() {
     });
 
     // -------------------------------------------------------------
-    // Test 11: Google Maps Configuration (GET /api/config)
+    // Test 11: Map Engine Configuration (GET /api/config)
     // -------------------------------------------------------------
-    console.log('\n[Test 11] Dashboard API: Google Maps Configuration');
+    console.log('\n[Test 11] Dashboard API: Map Configuration');
     const configRes = await request('GET', '/api/config');
     assert(configRes.statusCode === 200, 'GET /api/config returns 200 OK');
-    assert(configRes.body.map_engine === 'google', 'Map engine is configured as google');
-    assert(configRes.body.google_maps_api_key !== undefined, 'Google Maps API key field is present');
+    assert(configRes.body.map_engine === 'leaflet' || configRes.body.map_engine === 'google', 'Map engine is configured');
+    assert(configRes.body.leaflet === true || configRes.body.google_maps_api_key !== undefined, 'Map engine details present');
     assert(configRes.body.map_style_url !== undefined, 'Map style URL is present');
 
     // -------------------------------------------------------------

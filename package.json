@@ -19,5 +19,8 @@
     "sos"
   ],
   "author": "MeshRoute Team",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "localtunnel": "^2.0.2"
+  }
 }

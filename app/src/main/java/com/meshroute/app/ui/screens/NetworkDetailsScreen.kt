@@ -55,7 +55,11 @@ fun NetworkDetailsScreen(
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var isDeveloperModeEnabled by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences("meshroute_prefs", android.content.Context.MODE_PRIVATE) }
+    var isDeveloperModeEnabled by remember {
+        mutableStateOf(prefs.getBoolean("developer_mode_enabled", false) || gatewayUploader.backendUrl != GatewayUploader.DEFAULT_BACKEND_URL)
+    }
     var backendUrlInput by remember { mutableStateOf(gatewayUploader.backendUrl) }
     var selectedDiagnosticTab by remember { mutableIntStateOf(0) }
     var showAdvancedDiagnostics by remember { mutableStateOf(false) }
@@ -483,7 +487,10 @@ fun NetworkDetailsScreen(
                                 Text("Developer Mode", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                                 Switch(
                                     checked = isDeveloperModeEnabled,
-                                    onCheckedChange = { isDeveloperModeEnabled = it },
+                                    onCheckedChange = {
+                                        isDeveloperModeEnabled = it
+                                        prefs.edit().putBoolean("developer_mode_enabled", it).apply()
+                                    },
                                     colors = SwitchDefaults.colors(
                                         checkedThumbColor = AccentEmerald,
                                         checkedTrackColor = AccentGreenSubtle
@@ -497,6 +504,7 @@ fun NetworkDetailsScreen(
                                     onValueChange = {
                                         backendUrlInput = it
                                         gatewayUploader.backendUrl = it
+                                        prefs.edit().putString("custom_backend_url", it).apply()
                                     },
                                     label = { Text("Server URL", fontSize = 11.sp) },
                                     modifier = Modifier.fillMaxWidth(),
@@ -504,7 +512,16 @@ fun NetworkDetailsScreen(
                                 )
 
                                 FilledTonalButton(
-                                    onClick = { coroutineScope.launch { gatewayUploader.drainQueue() } },
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "Draining upload queue to: ${gatewayUploader.backendUrl.ifBlank { "default" }}",
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                            gatewayUploader.drainQueue()
+                                        }
+                                    },
                                     modifier = Modifier.align(Alignment.End)
                                 ) {
                                     Text("Drain Upload Queue", fontSize = 11.sp)

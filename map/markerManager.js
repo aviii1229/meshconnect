@@ -1,7 +1,7 @@
 /**
- * Reusable Marker Manager Module for Google Maps
- * Handles dynamic emergency beacons, custom HTML overlays, accuracy circles,
- * InfoWindows, and modular emergency marker types.
+ * Reusable Marker Manager Module for Leaflet
+ * Handles dynamic emergency beacons using L.divIcon, accuracy circles (L.circle),
+ * popups with direct Google Maps external links, and modular emergency marker types.
  */
 (function (global) {
   'use strict';
@@ -118,316 +118,204 @@
     }
   };
 
-  /**
-   * Custom HTML OverlayView for Google Maps
-   * Seamlessly renders CSS-animated DOM elements at specific LatLng coordinates.
-   */
-  function HtmlOverlay(latLng, element, map) {
-    this.latLng = latLng;
-    this.element = element;
-    this.map = map;
-    this.setMap(map);
-  }
-
-  function setupHtmlOverlayClass() {
-    if (!global.google?.maps?.OverlayView) return;
-    HtmlOverlay.prototype = new global.google.maps.OverlayView();
-
-    HtmlOverlay.prototype.onAdd = function () {
-      const panes = this.getPanes();
-      if (panes && panes.overlayMouseTarget) {
-        panes.overlayMouseTarget.appendChild(this.element);
-      }
-    };
-
-    HtmlOverlay.prototype.draw = function () {
-      const projection = this.getProjection();
-      if (!projection || !this.element || !this.latLng) return;
-
-      const point = projection.fromLatLngToDivPixel(this.latLng);
-      if (point) {
-        this.element.style.position = 'absolute';
-        this.element.style.left = point.x + 'px';
-        this.element.style.top = point.y + 'px';
-        this.element.style.transform = 'translate(-50%, -50%)';
-        this.element.style.zIndex = '100';
-      }
-    };
-
-    HtmlOverlay.prototype.onRemove = function () {
-      if (this.element && this.element.parentNode) {
-        this.element.parentNode.removeChild(this.element);
-      }
-    };
-
-    HtmlOverlay.prototype.setPosition = function (latLng) {
-      this.latLng = latLng;
-      this.draw();
-    };
-
-    HtmlOverlay.prototype.setVisible = function (visible) {
-      if (this.element) {
-        this.element.style.display = visible ? 'block' : 'none';
-      }
-    };
-  }
-
   function MarkerManager(mapView) {
     this.mapView = mapView;
     this.map = null;
-    this.markers = new Map(); // id -> { id, overlay, circle, infoWindow, data, latLng, status, type }
-    this.accuracyRingsVisible = true;
-    this.activeInfoWindow = null;
-    this.markerTypes = MARKER_TYPES;
+    this.markers = new Map(); // id -> { marker, circle, data, latLng, popup }
+    this.showAccuracyRings = true;
+    this.activePopupMarker = null;
   }
 
   MarkerManager.prototype.init = function (mapInstance) {
     this.map = mapInstance;
-    setupHtmlOverlayClass();
   };
 
   /**
-   * Primary method to add or update a marker on Google Maps
-   * @param {Object} config
-   *   latitude, longitude, type, status, title, description, hops, accuracy, popupHtml, onClick
+   * Determine marker category key
    */
-  MarkerManager.prototype.addMarker = function (config) {
-    if (!this.map || !config) return null;
-
-    const latLng = global.MapUtils.toGoogleLatLng(config);
-    if (!latLng) {
-      console.warn('MarkerManager: Invalid coordinates for marker:', config);
-      return null;
+  MarkerManager.prototype.resolveMarkerType = function (explicitType, status) {
+    if (explicitType && MARKER_TYPES[explicitType]) {
+      return explicitType;
     }
-
-    const id = String(config.id || config.incident_id || `marker-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`);
-    const status = (config.status || 'NEW').toUpperCase();
-    const typeKey = this.resolveMarkerType(config.type, status);
-    const typeDef = this.markerTypes[typeKey] || this.markerTypes.sos;
-    const hops = config.hops !== undefined ? config.hops : 0;
-    const accuracy = (config.location && config.location.accuracy) || config.accuracy || 15;
-
-    // If marker already exists, smoothly update it
-    if (this.markers.has(id)) {
-      return this.updateMarker(id, { latLng, status, hops, accuracy, config, typeKey });
-    }
-
-    // 1. Build custom animated DOM beacon element
-    const el = this.createMarkerElement(status, hops, typeKey, config);
-
-    // 2. Build Google Maps LatLng object
-    const googleLatLng = new google.maps.LatLng(latLng.lat, latLng.lng);
-
-    // 3. Create Custom HTML Overlay
-    const overlay = new HtmlOverlay(googleLatLng, el, this.map);
-
-    // 4. Build InfoWindow
-    let infoWindow = null;
-    const popupContent = config.popupHtml || (typeof config.buildPopup === 'function' ? config.buildPopup(config) : this.buildDefaultPopup(config, typeDef));
-    if (popupContent) {
-      infoWindow = new google.maps.InfoWindow({
-        content: popupContent,
-        disableAutoPan: false,
-        pixelOffset: new google.maps.Size(0, -18)
-      });
-    }
-
-    // 5. Build Accuracy Radius Circle
-    let circle = null;
-    if (accuracy && accuracy > 0) {
-      const circleColor = status === 'RESOLVED' ? '#10b981' : (status === 'ACKNOWLEDGED' ? '#f59e0b' : typeDef.circleColor);
-      circle = new google.maps.Circle({
-        map: this.map,
-        center: googleLatLng,
-        radius: accuracy,
-        fillColor: circleColor,
-        fillOpacity: 0.12,
-        strokeColor: circleColor,
-        strokeOpacity: 0.6,
-        strokeWeight: 1.5,
-        visible: this.accuracyRingsVisible,
-        clickable: false
-      });
-    }
-
-    const markerEntry = {
-      id,
-      overlay,
-      circle,
-      infoWindow,
-      element: el,
-      data: config,
-      latLng,
-      googleLatLng,
-      status,
-      type: typeKey,
-      accuracy
-    };
-
-    // Click handler for beacon element
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-
-      if (this.activeInfoWindow) {
-        this.activeInfoWindow.close();
-      }
-
-      if (infoWindow) {
-        infoWindow.setPosition(googleLatLng);
-        infoWindow.open({
-          map: this.map
-        });
-        this.activeInfoWindow = infoWindow;
-      }
-
-      if (typeof config.onClick === 'function') {
-        config.onClick(config);
-      }
-    });
-
-    this.markers.set(id, markerEntry);
-    return markerEntry;
-  };
-
-  /**
-   * Resolve marker type key based on type and status
-   */
-  MarkerManager.prototype.resolveMarkerType = function (rawType, status) {
-    if (rawType) {
-      const key = String(rawType).toLowerCase().replace(/[\s-]+/g, '_');
-      if (this.markerTypes[key]) return key;
-    }
-
-    // Map emergency incident status to marker types
     if (status === 'RESOLVED') return 'safe_zone';
     if (status === 'ACKNOWLEDGED') return 'victim';
     return 'sos';
   };
 
   /**
-   * Create animated high-contrast beacon element
+   * Generate HTML for animated pulsing cyber-beacon
    */
-  MarkerManager.prototype.createMarkerElement = function (status, hops, typeKey, config) {
-    const typeDef = this.markerTypes[typeKey] || this.markerTypes.sos;
-    let statusClass = 'status-new';
-    let iconLabel = typeDef.icon;
+  MarkerManager.prototype.createMarkerHtml = function (status, hops, typeKey, data = {}) {
+    const typeDef = MARKER_TYPES[typeKey] || MARKER_TYPES.sos;
+    const isPulse = typeDef.pulse && status !== 'RESOLVED';
+    const statusClass = (status || 'NEW').toLowerCase();
+    const hopBadge = hops !== undefined ? `<span class="beacon-hops" title="${hops} mesh hops traversed">${hops}h</span>` : '';
 
-    if (status === 'ACKNOWLEDGED') {
-      statusClass = 'status-acknowledged';
-      iconLabel = '⚡' + (hops > 0 ? hops : '');
-    } else if (status === 'RESOLVED') {
-      statusClass = 'status-resolved';
-      iconLabel = '✓';
-    } else if (hops > 0 && typeKey === 'sos') {
-      iconLabel = hops;
-    }
-
-    const el = document.createElement('div');
-    el.className = `sos-beacon-marker ${statusClass} marker-type-${typeKey}`;
-    el.title = config.title || typeDef.label;
-
-    const shouldPulse = status === 'NEW' && typeDef.pulse;
-
-    el.innerHTML = `
-      ${shouldPulse ? '<div class="beacon-ripple"></div><div class="beacon-ripple delay-1"></div><div class="beacon-ripple delay-2"></div>' : ''}
-      <div class="beacon-core" style="${status === 'NEW' ? `background:${typeDef.bgGradient};box-shadow:0 0 16px ${typeDef.glowColor}, 0 3px 8px rgba(0,0,0,0.6);` : ''}">
-        ${iconLabel}
+    return `
+      <div class="beacon-wrapper ${statusClass} type-${typeKey}" style="--beacon-gradient:${typeDef.bgGradient};--beacon-glow:${typeDef.glowColor};--ripple-color:${typeDef.rippleColor};">
+        ${isPulse ? '<div class="beacon-radar-ring"></div><div class="beacon-radar-ring-2"></div>' : ''}
+        <div class="beacon-core">
+          <span class="beacon-icon">${typeDef.icon}</span>
+          ${hopBadge}
+        </div>
       </div>
     `;
-
-    return el;
   };
 
   /**
-   * Update an existing marker's position, status, hops, or popup
+   * Add or update an emergency marker on Leaflet map
    */
-  MarkerManager.prototype.updateMarker = function (id, updates) {
-    const entry = this.markers.get(id);
-    if (!entry) return null;
+  MarkerManager.prototype.addMarker = function (config) {
+    if (!this.map || !global.L) return null;
 
-    if (updates.latLng) {
-      entry.latLng = updates.latLng;
-      entry.googleLatLng = new google.maps.LatLng(updates.latLng.lat, updates.latLng.lng);
-      entry.overlay.setPosition(entry.googleLatLng);
-      if (entry.circle) {
-        entry.circle.setCenter(entry.googleLatLng);
+    const id = config.id || `marker-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+    const latLng = global.MapUtils.toLatLngArray(config.latLng || [config.latitude, config.longitude]);
+
+    if (!latLng) {
+      console.warn('MarkerManager: Invalid coordinates for marker:', config);
+      return null;
+    }
+
+    const status = config.status || 'NEW';
+    const hops = config.hops !== undefined ? config.hops : 0;
+    const typeKey = this.resolveMarkerType(config.type, status);
+    const typeDef = MARKER_TYPES[typeKey] || MARKER_TYPES.sos;
+
+    // Remove existing marker with same ID if present
+    if (this.markers.has(id)) {
+      this.removeMarker(id);
+    }
+
+    // 1. Create Leaflet DivIcon
+    const html = this.createMarkerHtml(status, hops, typeKey, config);
+    const divIcon = global.L.divIcon({
+      className: 'mesh-leaflet-marker-icon',
+      html: html,
+      iconSize: [44, 44],
+      iconAnchor: [22, 22],
+      popupAnchor: [0, -22]
+    });
+
+    const marker = global.L.marker(latLng, {
+      icon: divIcon,
+      zIndexOffset: status === 'NEW' ? 1000 : 500,
+      title: config.title || typeDef.label
+    });
+
+    // 2. Create Accuracy Radius Circle
+    const accuracy = config.accuracy || 15;
+    const circleColor = status === 'RESOLVED' ? '#10b981' : (status === 'ACKNOWLEDGED' ? '#f59e0b' : (typeDef.circleColor || '#ef4444'));
+    const circle = global.L.circle(latLng, {
+      radius: accuracy,
+      color: circleColor,
+      fillColor: circleColor,
+      fillOpacity: 0.12,
+      weight: 1.5,
+      dashArray: '3, 6'
+    });
+
+    // 3. Popup Content (Includes Direct Google Maps Link!)
+    const popupHtml = config.popupHtml || this.buildDefaultPopup(config, typeDef, latLng);
+    marker.bindPopup(popupHtml, {
+      maxWidth: 360,
+      className: 'mesh-leaflet-popup',
+      autoPanPadding: [30, 30]
+    });
+
+    // Marker click handling
+    marker.on('click', () => {
+      this.activePopupMarker = marker;
+      if (typeof config.onClick === 'function') {
+        config.onClick(id, config);
       }
+    });
+
+    // Add layers to map
+    marker.addTo(this.map);
+    if (this.showAccuracyRings) {
+      circle.addTo(this.map);
     }
 
-    if (updates.accuracy && entry.circle) {
-      entry.accuracy = updates.accuracy;
-      entry.circle.setRadius(updates.accuracy);
-    }
+    const entry = {
+      id: id,
+      marker: marker,
+      circle: circle,
+      latLng: latLng,
+      accuracy: accuracy,
+      status: status,
+      typeKey: typeKey,
+      data: config
+    };
 
-    if (updates.status && updates.status !== entry.status) {
-      entry.status = updates.status;
-      const typeKey = updates.typeKey || this.resolveMarkerType(entry.data.type, entry.status);
-      const newEl = this.createMarkerElement(entry.status, updates.hops || entry.data.hops || 0, typeKey, entry.data);
-      entry.element.className = newEl.className;
-      entry.element.innerHTML = newEl.innerHTML;
-
-      // Update circle color
-      if (entry.circle) {
-        const circleColor = entry.status === 'RESOLVED' ? '#10b981' : (entry.status === 'ACKNOWLEDGED' ? '#f59e0b' : '#ef4444');
-        entry.circle.setOptions({
-          fillColor: circleColor,
-          strokeColor: circleColor
-        });
-      }
-    }
-
-    if (updates.config) {
-      entry.data = Object.assign(entry.data, updates.config);
-      if (updates.config.popupHtml && entry.infoWindow) {
-        entry.infoWindow.setContent(updates.config.popupHtml);
-      }
-    }
-
+    this.markers.set(id, entry);
     return entry;
   };
 
   /**
-   * Default InfoWindow content builder for arbitrary markers
+   * Default InfoWindow / Popup builder with Google Maps link
    */
-  MarkerManager.prototype.buildDefaultPopup = function (config, typeDef) {
+  MarkerManager.prototype.buildDefaultPopup = function (config, typeDef, latLng) {
     const title = config.title || typeDef.label;
     const desc = config.description || 'Emergency Network Node';
-    const lat = config.latitude || (config.latLng && config.latLng.lat) || '0.0';
-    const lng = config.longitude || (config.latLng && config.latLng.lng) || '0.0';
+    const lat = latLng[0];
+    const lng = latLng[1];
+    const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
 
     return `
       <div class="popup-card">
         <div class="popup-header">
           <span class="popup-badge status-new">${typeDef.icon} ${global.MapUtils.escapeHtml(title)}</span>
+          <span class="popup-time">${new Date().toLocaleTimeString()}</span>
         </div>
         <div class="popup-msg-box">
           <p>${global.MapUtils.escapeHtml(desc)}</p>
         </div>
         <div class="popup-details">
           <div class="popup-detail-item">
-            <span class="popup-detail-label">Location</span>
-            <span class="popup-detail-val">${Number(lat).toFixed(4)}, ${Number(lng).toFixed(4)}</span>
+            <span class="popup-detail-label">GPS Coordinates</span>
+            <span class="popup-detail-val">${lat.toFixed(5)}, ${lng.toFixed(5)}</span>
+          </div>
+          <div class="popup-detail-item">
+            <span class="popup-detail-label">Accuracy</span>
+            <span class="popup-detail-val">±${config.accuracy || 10}m</span>
           </div>
         </div>
+
+        <!-- Open in Google Maps Link -->
+        <a href="${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="btn-popup-google-maps" title="Open these exact coordinates in Google Maps">
+          📍 Open in Google Maps ↗
+        </a>
       </div>
     `;
   };
 
+  MarkerManager.prototype.getMarker = function (id) {
+    return this.markers.get(id) || null;
+  };
+
   /**
-   * Remove a single marker by ID
+   * Open popup for marker
+   */
+  MarkerManager.prototype.openPopup = function (id) {
+    const entry = this.markers.get(id);
+    if (entry && entry.marker) {
+      entry.marker.openPopup();
+      this.activePopupMarker = entry.marker;
+    }
+  };
+
+  /**
+   * Remove a single marker
    */
   MarkerManager.prototype.removeMarker = function (id) {
     const entry = this.markers.get(id);
     if (!entry) return false;
 
-    if (entry.overlay) {
-      entry.overlay.setMap(null);
-    }
-    if (entry.circle) {
-      entry.circle.setMap(null);
-    }
-    if (entry.infoWindow) {
-      entry.infoWindow.close();
+    if (this.map) {
+      this.map.removeLayer(entry.marker);
+      if (entry.circle) {
+        this.map.removeLayer(entry.circle);
+      }
     }
     this.markers.delete(id);
     return true;
@@ -437,61 +325,71 @@
    * Clear all markers
    */
   MarkerManager.prototype.clearMarkers = function () {
+    if (!this.map) return;
     for (const [id, entry] of this.markers.entries()) {
-      if (entry.overlay) entry.overlay.setMap(null);
-      if (entry.circle) entry.circle.setMap(null);
-      if (entry.infoWindow) entry.infoWindow.close();
+      this.map.removeLayer(entry.marker);
+      if (entry.circle) {
+        this.map.removeLayer(entry.circle);
+      }
     }
     this.markers.clear();
-    if (this.activeInfoWindow) {
-      this.activeInfoWindow.close();
-      this.activeInfoWindow = null;
-    }
+    this.activePopupMarker = null;
   };
 
   /**
-   * Toggle visibility of GPS Accuracy Rings
+   * Toggle accuracy circles
    */
   MarkerManager.prototype.setAccuracyRingsVisible = function (visible) {
-    this.accuracyRingsVisible = !!visible;
+    this.showAccuracyRings = !!visible;
+    if (!this.map) return;
+
     for (const entry of this.markers.values()) {
       if (entry.circle) {
-        entry.circle.setVisible(this.accuracyRingsVisible);
+        if (this.showAccuracyRings) {
+          if (!this.map.hasLayer(entry.circle)) {
+            entry.circle.addTo(this.map);
+          }
+        } else {
+          if (this.map.hasLayer(entry.circle)) {
+            this.map.removeLayer(entry.circle);
+          }
+        }
       }
     }
   };
 
   /**
-   * Fit all active markers in the current viewport
+   * Fit map viewport to include all active markers
    */
   MarkerManager.prototype.fitAll = function (options = {}) {
     if (!this.map || this.markers.size === 0) return;
 
-    const bounds = new google.maps.LatLngBounds();
-    let count = 0;
+    const points = [];
     for (const entry of this.markers.values()) {
-      if (entry.googleLatLng) {
-        bounds.extend(entry.googleLatLng);
-        count++;
-      }
+      if (entry.latLng) points.push(entry.latLng);
     }
 
-    if (count > 0) {
-      this.map.fitBounds(bounds, options.padding || 60);
+    if (points.length === 0) return;
+
+    if (points.length === 1) {
+      this.map.flyTo(points[0], 14, {
+        animate: true,
+        duration: 0.8,
+        easeLinearity: 0.2
+      });
+      return;
     }
-  };
 
-  MarkerManager.prototype.getMarker = function (id) {
-    return this.markers.get(id) || null;
-  };
-
-  MarkerManager.prototype.getAllMarkers = function () {
-    return Array.from(this.markers.values());
-  };
-
-  MarkerManager.prototype.destroy = function () {
-    this.clearMarkers();
+    const padding = options.padding || 60;
+    const bounds = global.L.latLngBounds(points);
+    this.map.fitBounds(bounds, {
+      padding: [padding, padding],
+      maxZoom: 16,
+      animate: true,
+      duration: 0.8
+    });
   };
 
   global.MarkerManager = MarkerManager;
+  global.MARKER_TYPES = MARKER_TYPES;
 })(window);

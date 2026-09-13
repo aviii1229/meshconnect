@@ -325,10 +325,11 @@ html, body {
   position: absolute;
   top: 16px;
   left: 16px;
-  z-index: 500;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  pointer-events: auto;
 }
 
 .map-control-card {
@@ -537,12 +538,13 @@ html, body {
   50% { transform: scale(1.08); }
 }
 
-/* Custom MapLibre Navigation Toolbar */
-.maplibre-custom-control-group {
+/* Custom Map Navigation Toolbar (Leaflet) */
+.maplibre-custom-control-group,
+.map-custom-control-group {
   position: absolute;
   top: 16px;
   right: 16px;
-  z-index: 10;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -553,9 +555,11 @@ html, body {
   border-radius: var(--radius-md);
   padding: 6px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
 }
 
-.map-ctrl-btn {
+.map-ctrl-btn,
+.btn-custom-map-control {
   width: 36px;
   height: 36px;
   background: rgba(255, 255, 255, 0.04);
@@ -571,18 +575,21 @@ html, body {
   user-select: none;
 }
 
-.map-ctrl-btn:hover {
+.map-ctrl-btn:hover,
+.btn-custom-map-control:hover {
   background: rgba(0, 212, 170, 0.15);
   border-color: var(--accent-cyan);
   color: var(--accent-cyan);
   transform: translateY(-1px);
 }
 
-.map-ctrl-btn:active {
+.map-ctrl-btn:active,
+.btn-custom-map-control:active {
   transform: translateY(0);
 }
 
-.map-ctrl-btn.active {
+.map-ctrl-btn.active,
+.btn-custom-map-control.active {
   background: rgba(14, 165, 233, 0.25);
   border-color: #0ea5e9;
   color: #38bdf8;
@@ -733,6 +740,158 @@ html, body {
 .maplibregl-popup-content {
   margin: 0 !important;
   line-height: 1.4 !important;
+}
+
+/* Leaflet Dark Glassmorphic Popup Styling */
+.leaflet-container {
+  background: #060b14 !important;
+  font-family: var(--font-sans) !important;
+}
+
+.leaflet-popup {
+  margin-bottom: 24px;
+}
+
+.leaflet-popup-content-wrapper {
+  background: rgba(10, 17, 32, 0.95) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid var(--border-accent) !important;
+  border-radius: var(--radius-lg) !important;
+  color: var(--text-primary) !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7) !important;
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.leaflet-popup-content {
+  margin: 0 !important;
+  line-height: 1.4 !important;
+  min-width: 280px;
+  max-width: 340px;
+}
+
+.leaflet-popup-tip {
+  background: rgba(10, 17, 32, 0.95) !important;
+  box-shadow: none !important;
+  border-top: 1px solid var(--border-accent) !important;
+  border-left: 1px solid var(--border-accent) !important;
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--text-muted) !important;
+  padding: 8px 12px !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  top: 4px !important;
+  right: 4px !important;
+  transition: color var(--transition) !important;
+}
+
+.leaflet-container a.leaflet-popup-close-button:hover {
+  color: #fff !important;
+}
+
+/* Leaflet Attribution control */
+.leaflet-control-attribution {
+  background: rgba(10, 17, 32, 0.85) !important;
+  backdrop-filter: blur(10px) !important;
+  color: var(--text-muted) !important;
+  font-size: 10.5px !important;
+  padding: 3px 8px !important;
+  border-radius: var(--radius-sm) 0 0 0 !important;
+  border-top: 1px solid var(--border-subtle) !important;
+  border-left: 1px solid var(--border-subtle) !important;
+}
+
+.leaflet-control-attribution a {
+  color: var(--accent-cyan) !important;
+  text-decoration: none !important;
+}
+
+.leaflet-control-attribution a:hover {
+  text-decoration: underline !important;
+}
+
+/* User Location GPS Beacon on Leaflet */
+.user-location-marker-wrapper {
+  position: relative;
+  width: 24px;
+  height: 24px;
+}
+
+.user-location-pulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(56, 189, 248, 0.4);
+  animation: beacon-radar-ripple 2s infinite ease-out;
+}
+
+.user-location-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  background: #38bdf8;
+  border: 2.5px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.9);
+}
+
+/* Open in Google Maps Button on Individual Pins */
+.btn-popup-google-maps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  background: linear-gradient(135deg, rgba(66, 133, 244, 0.22), rgba(52, 168, 83, 0.22));
+  border: 1px solid rgba(66, 133, 244, 0.5);
+  border-radius: var(--radius-sm);
+  color: #93c5fd;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: var(--transition);
+  cursor: pointer;
+}
+
+.btn-popup-google-maps:hover {
+  background: linear-gradient(135deg, rgba(66, 133, 244, 0.45), rgba(52, 168, 83, 0.45));
+  border-color: #60a5fa;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(66, 133, 244, 0.35);
+}
+
+.btn-card-google-maps {
+  color: #60a5fa;
+  text-decoration: none;
+  font-size: 0.72rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: rgba(96, 165, 250, 0.1);
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  transition: var(--transition);
+}
+
+.btn-card-google-maps:hover {
+  background: rgba(96, 165, 250, 0.25);
+  border-color: #60a5fa;
+  color: #fff;
 }
 
 .popup-card {

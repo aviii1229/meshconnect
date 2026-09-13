@@ -86,9 +86,7 @@ class GatewayUploader(
     /** Trigger an immediate upload attempt (e.g. after receiving a packet in the mesh while online) */
     fun triggerUpload() {
         scope.launch {
-            if (networkMonitor.isInternetAvailable.value) {
-                drainQueue()
-            }
+            drainQueue()
         }
     }
 
@@ -124,7 +122,13 @@ class GatewayUploader(
     private suspend fun uploadSinglePacket(packet: SosPacket) = withContext(Dispatchers.IO) {
         var connection: HttpURLConnection? = null
         try {
-            val endpoint = URL("$backendUrl/api/sos")
+            val cleanBase = backendUrl.trim().trimEnd('/')
+            val endpointUrlStr = when {
+                cleanBase.endsWith("/api/sos") -> cleanBase
+                cleanBase.endsWith("/dashboard") -> "${cleanBase.removeSuffix("/dashboard")}/api/sos"
+                else -> "$cleanBase/api/sos"
+            }
+            val endpoint = URL(endpointUrlStr)
             connection = (endpoint.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 6000
