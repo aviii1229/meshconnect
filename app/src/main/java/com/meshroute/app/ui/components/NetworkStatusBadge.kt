@@ -26,6 +26,7 @@ import com.meshroute.app.ui.theme.*
 
 data class NetworkStateInfo(
     val title: String,
+    val compactTitle: String,
     val subtitle: String,
     val badgeColor: Color,
     val containerColor: Color,
@@ -43,8 +44,9 @@ fun getUnambiguousNetworkState(
         isInternetAvailable -> {
             NetworkStateInfo(
                 title = "Gateway Connected",
-                subtitle = if (peerCount > 0) "$peerCount nearby relay devices" else "Direct rescue gateway reachable",
-                badgeColor = AccentGreen,
+                compactTitle = "Gateway Connected",
+                subtitle = if (peerCount > 0) "$peerCount nearby relay devices" else "Direct rescue uplink active",
+                badgeColor = AccentCyan,
                 containerColor = AccentGreenSubtle,
                 icon = Icons.Default.CloudDone
             )
@@ -53,6 +55,7 @@ fun getUnambiguousNetworkState(
         peerCount > 0 && transportHealth != TransportHealth.UNAVAILABLE -> {
             NetworkStateInfo(
                 title = "Mesh Network Active",
+                compactTitle = if (peerCount > 0) "Mesh Active ($peerCount)" else "Mesh Active",
                 subtitle = "$peerCount nearby relay device${if (peerCount == 1) "" else "s"}",
                 badgeColor = AccentEmerald,
                 containerColor = AccentGreenSubtle,
@@ -63,6 +66,7 @@ fun getUnambiguousNetworkState(
         transportHealth == TransportHealth.HEALTHY || transportHealth == TransportHealth.DEGRADED -> {
             NetworkStateInfo(
                 title = "Mesh Available · Gateway Offline",
+                compactTitle = "Gateway Offline",
                 subtitle = "Searching for nearby relay devices",
                 badgeColor = WarningAmber,
                 containerColor = WarningAmberSubtle,
@@ -73,6 +77,7 @@ fun getUnambiguousNetworkState(
         else -> {
             NetworkStateInfo(
                 title = "No Relay Devices Available",
+                compactTitle = "No Relays",
                 subtitle = "SOS will be retained locally until a peer is found",
                 badgeColor = EmergencyRed,
                 containerColor = EmergencyRedSubtle,
@@ -97,38 +102,40 @@ fun NetworkStatusBadge(
     )
 
     Surface(
-        color = state.containerColor,
+        color = state.containerColor.copy(alpha = 0.22f),
         shape = RoundedCornerShape(20.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, state.badgeColor.copy(alpha = 0.45f)),
         modifier = modifier
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.padding(
+                horizontal = if (showSubtitle) 10.dp else 8.dp,
+                vertical = if (showSubtitle) 6.dp else 4.dp
+            ),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(state.badgeColor)
-            )
             Icon(
                 imageVector = state.icon,
                 contentDescription = null,
                 tint = state.badgeColor,
-                modifier = Modifier.size(14.dp)
+                modifier = Modifier.size(if (showSubtitle) 14.dp else 12.dp)
             )
             Column {
                 Text(
-                    text = state.title,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
+                    text = if (showSubtitle) state.title else state.compactTitle,
+                    fontSize = if (showSubtitle) 11.sp else 10.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false,
                     color = state.badgeColor
                 )
                 if (showSubtitle && state.subtitle.isNotEmpty()) {
                     Text(
                         text = state.subtitle,
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
+                        maxLines = 1,
+                        softWrap = false,
                         color = TextSecondary
                     )
                 }

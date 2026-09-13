@@ -39,9 +39,9 @@ fun SosDeliveryFlowView(
 ) {
     if (packets.isEmpty()) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = CardBackground),
-            border = BorderStroke(1.dp, DarkBorder),
-            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = GlassCardBackground),
+            border = BorderStroke(1.dp, GlassInputBorder),
+            shape = RoundedCornerShape(18.dp),
             modifier = modifier.fillMaxWidth()
         ) {
             Column(
@@ -107,9 +107,9 @@ private fun SosPacketDeliveryCard(
     var isDecryptedRevealed by remember(packet.messageId) { mutableStateOf(isSelfOriginated) }
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-        border = BorderStroke(1.dp, DarkBorder),
-        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = GlassCardBackground),
+        border = BorderStroke(1.dp, GlassInputBorder),
+        shape = RoundedCornerShape(18.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(

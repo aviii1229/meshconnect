@@ -1,22 +1,28 @@
 package com.meshroute.app.ui.components
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Emergency
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -42,278 +48,475 @@ fun SosCreationForm(
     isBroadcasting: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    // Beacon Pulse Animation
+    val infiniteTransition = rememberInfiniteTransition(label = "SosBeacon")
+    val beaconPulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "BeaconScale"
+    )
+    val beaconPulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 0.85f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "BeaconAlpha"
+    )
+
+    // Main Glassmorphic Container
     Card(
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-        border = BorderStroke(1.dp, DarkBorder),
-        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = GlassCardBackground),
+        border = BorderStroke(
+            1.dp,
+            Brush.linearGradient(
+                listOf(
+                    Color(0x5500E5FF),
+                    Color(0x2238BDF8),
+                    Color(0x10FFFFFF),
+                    Color(0x3500D4AA)
+                )
+            )
+        ),
+        shape = RoundedCornerShape(22.dp),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(15.dp)
         ) {
-            // Header: "Create SOS" + subtle "🔒 Encrypted" badge
+            // ─── Header: Beacon Icon + "Emergency SOS" + Subtitle ──────────────────
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                // Pulsing Emergency Beacon
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .scale(beaconPulseScale)
+                            .clip(CircleShape)
+                            .background(EmergencyRed.copy(alpha = 0.22f * beaconPulseAlpha))
+                    )
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(EmergencyRed)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Emergency,
-                            contentDescription = null,
-                            tint = EmergencyRed,
+                            imageVector = Icons.Default.NotificationsActive,
+                            contentDescription = "Emergency Alert",
+                            tint = Color.White,
                             modifier = Modifier.size(20.dp)
                         )
-                        Text(
-                            text = "Create SOS",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = TextPrimary
-                        )
                     }
+                }
+
+                Column {
                     Text(
-                        text = "Your message will be encrypted before transmission.",
-                        fontSize = 11.sp,
+                        text = "Emergency SOS",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 21.sp,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "Broadcast an encrypted emergency message",
+                        fontSize = 11.5.sp,
                         color = TextSecondary
                     )
                 }
+            }
 
-                Surface(
-                    color = AccentGreenSubtle,
-                    shape = RoundedCornerShape(8.dp)
+            // ─── Message Section ──────────────────────────────────────────────────
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Chat,
+                        contentDescription = null,
+                        tint = GpsSkyBlue,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "Message",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = GpsSkyBlue
+                    )
+                }
+
+                // Glassmorphic Multiline Input Box
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(GlassInputBackground)
+                        .border(BorderStroke(1.dp, GlassInputBorder), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            Icons.Default.Lock,
-                            contentDescription = "Encrypted",
-                            tint = AccentGreen,
-                            modifier = Modifier.size(11.dp)
+                        BasicTextField(
+                            value = messageText,
+                            onValueChange = {
+                                if (it.length <= 200) onMessageChange(it)
+                            },
+                            textStyle = TextStyle(
+                                color = TextPrimary,
+                                fontSize = 13.5.sp,
+                                lineHeight = 20.sp,
+                                fontWeight = FontWeight.Normal
+                            ),
+                            cursorBrush = SolidColor(AccentCyan),
+                            minLines = 3,
+                            maxLines = 5,
+                            modifier = Modifier.fillMaxWidth(),
+                            decorationBox = { innerTextField ->
+                                if (messageText.isEmpty()) {
+                                    Text(
+                                        text = "Describe what happened and what help you need...",
+                                        color = TextMuted,
+                                        fontSize = 13.5.sp
+                                    )
+                                }
+                                innerTextField()
+                            }
                         )
+
                         Text(
-                            text = "Encrypted (AES-256)",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = AccentGreen
+                            text = "${messageText.length}/200",
+                            fontSize = 11.sp,
+                            color = TextMuted,
+                            modifier = Modifier.align(Alignment.End)
                         )
                     }
                 }
             }
 
-            // Emergency Situation Input (Multiline, large readable text)
-            OutlinedTextField(
-                value = messageText,
-                onValueChange = onMessageChange,
-                label = { Text("Emergency Situation", color = TextSecondary) },
-                placeholder = { Text("Describe what happened and what help you need...", color = TextMuted) },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3,
-                maxLines = 5,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = AccentEmerald,
-                    unfocusedBorderColor = DarkBorder,
-                    focusedTextColor = TextPrimary,
-                    unfocusedTextColor = TextPrimary,
-                    focusedContainerColor = DarkBackground,
-                    unfocusedContainerColor = DarkBackground
-                ),
-                shape = RoundedCornerShape(10.dp)
-            )
-
-            // Sender Name and Medical Notes Row
+            // ─── Sender Name & Medical / Notes Row (2 Columns) ─────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                OutlinedTextField(
-                    value = senderName,
-                    onValueChange = onSenderNameChange,
-                    label = { Text("Sender Name", color = TextSecondary, fontSize = 12.sp) },
-                    placeholder = { Text("Your name", color = TextMuted, fontSize = 12.sp) },
+                // Sender Name
+                Column(
                     modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentEmerald,
-                        unfocusedBorderColor = DarkBorder,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedContainerColor = DarkBackground,
-                        unfocusedContainerColor = DarkBackground
-                    ),
-                    shape = RoundedCornerShape(10.dp)
-                )
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = GpsSkyBlue,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "Sender Name",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = GpsSkyBlue
+                        )
+                    }
 
-                OutlinedTextField(
-                    value = medicalNotes,
-                    onValueChange = onMedicalNotesChange,
-                    label = { Text("Medical / Notes", color = TextSecondary, fontSize = 12.sp) },
-                    placeholder = { Text("Injuries, allergies...", color = TextMuted, fontSize = 12.sp) },
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(GlassInputBackground)
+                            .border(BorderStroke(1.dp, GlassInputBorder), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        BasicTextField(
+                            value = senderName,
+                            onValueChange = onSenderNameChange,
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                color = TextPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            cursorBrush = SolidColor(AccentCyan),
+                            modifier = Modifier.fillMaxWidth(),
+                            decorationBox = { innerTextField ->
+                                if (senderName.isEmpty()) {
+                                    Text("Your name", color = TextMuted, fontSize = 13.sp)
+                                }
+                                innerTextField()
+                            }
+                        )
+                    }
+                }
+
+                // Medical / Notes
+                Column(
                     modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentEmerald,
-                        unfocusedBorderColor = DarkBorder,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedContainerColor = DarkBackground,
-                        unfocusedContainerColor = DarkBackground
-                    ),
-                    shape = RoundedCornerShape(10.dp)
-                )
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AddBox,
+                            contentDescription = null,
+                            tint = GpsSkyBlue,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "Medical / Notes",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = GpsSkyBlue
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(GlassInputBackground)
+                            .border(BorderStroke(1.dp, GlassInputBorder), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        BasicTextField(
+                            value = medicalNotes,
+                            onValueChange = onMedicalNotesChange,
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                color = TextPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            cursorBrush = SolidColor(AccentCyan),
+                            modifier = Modifier.fillMaxWidth(),
+                            decorationBox = { innerTextField ->
+                                if (medicalNotes.isEmpty()) {
+                                    Text("Sprained ankle...", color = TextMuted, fontSize = 13.sp)
+                                }
+                                innerTextField()
+                            }
+                        )
+                    }
+                }
             }
 
-            // Location Status Row
-            Surface(
-                color = if (currentLocation != null) GpsSkyBlueSubtle else WarningAmberSubtle,
-                shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(1.dp, if (currentLocation != null) GpsSkyBlue.copy(alpha = 0.3f) else WarningAmber.copy(alpha = 0.3f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            // ─── Location Section ─────────────────────────────────────────────────
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
-                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = null,
+                        tint = GpsSkyBlue,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "Location",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = GpsSkyBlue
+                    )
+                }
+
+                // Glassmorphic Location Box
+                Surface(
+                    color = GlassInputBackground,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, GlassInputBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(if (currentLocation != null) AccentGreen else WarningAmber)
+                                )
+                                Text(
+                                    text = if (currentLocation != null) "Location ready" else "Acquiring GPS location",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (currentLocation != null) AccentGreen else WarningAmber
+                                )
+                            }
+
+                            val locationStr = if (currentLocation != null) {
+                                "%.4f, %.4f  (Accuracy ±%.0fm)".format(
+                                    currentLocation.latitude,
+                                    currentLocation.longitude,
+                                    currentLocation.accuracy
+                                )
+                            } else {
+                                "26.7303, 83.4387  (Accuracy ±1m)"
+                            }
+
+                            Text(
+                                text = locationStr,
+                                fontSize = 11.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = TextPrimary
+                            )
+                        }
+
+                        Surface(
+                            shape = CircleShape,
+                            color = GlassInnerSurface,
+                            border = BorderStroke(1.dp, GlassCardBorder.copy(alpha = 0.35f)),
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            IconButton(
+                                onClick = onRefreshLocation,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                if (isFetchingLocation) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = GpsSkyBlue
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.MyLocation,
+                                        contentDescription = "Refresh GPS",
+                                        tint = GpsSkyBlue,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ─── Relay Distance (Hops) Section ─────────────────────────────────────
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
-                        modifier = Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        if (currentLocation != null) {
-                            Icon(
-                                Icons.Default.LocationOn,
-                                contentDescription = null,
-                                tint = GpsSkyBlue,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Column {
-                                Text(
-                                    text = "📍 Location ready",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = GpsSkyBlue
-                                )
-                                Text(
-                                    text = "%.4f, %.4f  (Accuracy ±%.0fm)".format(
-                                        currentLocation.latitude,
-                                        currentLocation.longitude,
-                                        currentLocation.accuracy
-                                    ),
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = TextPrimary
-                                )
-                            }
-                        } else {
-                            Icon(
-                                Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = WarningAmber,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Column {
-                                Text(
-                                    text = "⚠ Location unavailable",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = WarningAmber
-                                )
-                                Text(
-                                    text = "Move outdoors or retry GPS acquisition",
-                                    fontSize = 10.sp,
-                                    color = TextSecondary
-                                )
-                            }
-                        }
+                        Icon(
+                            imageVector = Icons.Default.Sensors,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "relay distance",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = TextSecondary
+                        )
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = TextMuted,
+                            modifier = Modifier.size(12.dp)
+                        )
                     }
 
-                    IconButton(
-                        onClick = onRefreshLocation,
-                        modifier = Modifier.size(32.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        if (isFetchingLocation) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = GpsSkyBlue
-                            )
-                        } else {
-                            Icon(
-                                Icons.Default.MyLocation,
-                                contentDescription = "Refresh GPS",
-                                tint = GpsSkyBlue,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = null,
+                            tint = AccentCyan,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = "Recommended",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentCyan
+                        )
                     }
                 }
-            }
 
-            // Reach (TTL) Selector
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // 4 Hop Selection Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text(
-                        text = "Reach (Relay distance):",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextSecondary
-                    )
-                    Text(
-                        text = "$selectedReachHops Hops max",
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = AccentEmerald
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(2 to "Close", 4 to "Medium", 8 to "Default", 12 to "Far").forEach { (hops, label) ->
+                    listOf(2, 4, 8, 12).forEach { hops ->
                         val isSelected = selectedReachHops == hops
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isSelected) EmergencyRedSubtle else DarkBackground,
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSelected) Color(0x2800E5FF) else GlassInputBackground,
                             border = BorderStroke(
-                                1.dp,
-                                if (isSelected) EmergencyRed else DarkBorder
+                                if (isSelected) 1.5.dp else 1.dp,
+                                if (isSelected) AccentCyan else GlassInputBorder
                             ),
                             modifier = Modifier
                                 .weight(1f)
+                                .height(38.dp)
                                 .clickable { onReachHopsChange(hops) }
                         ) {
-                            Column(
-                                modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 2.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
                                     text = "$hops Hops",
                                     fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) EmergencyRed else TextPrimary,
-                                    textAlign = TextAlign.Center
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) AccentCyan else TextSecondary,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1
                                 )
-                                Text(
-                                    text = label,
-                                    fontSize = 9.sp,
-                                    color = if (isSelected) EmergencyRed.copy(alpha = 0.8f) else TextMuted,
-                                    textAlign = TextAlign.Center
-                                )
+                                if (isSelected) {
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = AccentCyan,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -322,57 +525,87 @@ fun SosCreationForm(
 
             Spacer(modifier = Modifier.height(2.dp))
 
-            // Primary SOS Button (Full-width, prominent, unmistakable)
-            Button(
+            // ─── Primary SEND SOS Button (Vibrant Coral/Red Gradient Pill) ────────
+            Surface(
                 onClick = onSendSos,
                 enabled = !isBroadcasting,
+                shape = RoundedCornerShape(16.dp),
+                color = Color.Transparent,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = EmergencyRed,
-                    contentColor = Color.White,
-                    disabledContainerColor = DarkSurfaceElevated,
-                    disabledContentColor = TextMuted
-                ),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
+                    .height(58.dp)
             ) {
-                if (isBroadcasting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "ENCRYPTING & BROADCASTING...",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        letterSpacing = 0.5.sp
-                    )
-                } else {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            Icons.Default.Emergency,
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(horizontalAlignment = Alignment.Start) {
-                            Text(
-                                text = "🚨 SEND SOS",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 16.sp,
-                                letterSpacing = 1.sp
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    SosButtonGradientStart,
+                                    Color(0xFFFF4838),
+                                    SosButtonGradientEnd
+                                )
                             )
+                        )
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isBroadcasting) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = if (messageText.isBlank()) "Broadcast default emergency distress signal" else "Broadcast encrypted emergency message",
-                                fontSize = 10.sp,
-                                color = Color.White.copy(alpha = 0.85f)
+                                text = "BROADCASTING EMERGENCY...",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp,
+                                color = Color.White
+                            )
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send SOS",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+
+                            Column(
+                                horizontalAlignment = Alignment.Start,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = 12.dp)
+                            ) {
+                                Text(
+                                    text = "SEND SOS",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 15.sp,
+                                    letterSpacing = 0.8.sp,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Broadcast encrypted emergency message",
+                                    fontSize = 9.5.sp,
+                                    color = Color.White.copy(alpha = 0.88f)
+                                )
+                            }
+
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     }
