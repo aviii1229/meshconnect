@@ -333,7 +333,7 @@ MAP_STYLE_URL=terrain
 ### 1. Starting the Server & Dashboard
 ```bash
 # Clone repository
-git clone https://github.com/puneetpathak-arch/meshconnect.git
+git clone https://github.com/aviii1229/meshconnect.git
 cd mesh-network
 
 # Install dependencies (zero external npm packages required for backend)
