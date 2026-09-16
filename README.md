@@ -60,7 +60,7 @@ MeshRoute operates as a hybrid topology combining a decentralized edge mesh with
  │   │  Phone A    │ (Originator)                                          │
  │   └──────┬──────┘                                                       │
  │          │                                                              │
- │          │ BLE Advertisement Beacon (~30-100m)                          │
+ │          │ BLE Advertisement Beacon (~10-30m)                           │
  │          ▼                                                              │
  │   ┌─────────────┐                                                       │
  │   │  Phone B    │ (Relay 1: Store-Carry-Forward / Hops: 1)              │
