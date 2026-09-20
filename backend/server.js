@@ -652,4 +652,15 @@ if (require.main === module) {
   });
 }
 
-module.exports = { server, incidents, incidentLog, decryptPayload, encryptPayload, broadcastEvent };
+const handler = (req, res) => {
+  server.emit('request', req, res);
+};
+
+handler.server = server;
+handler.incidents = incidents;
+handler.incidentLog = incidentLog;
+handler.decryptPayload = decryptPayload;
+handler.encryptPayload = encryptPayload;
+handler.broadcastEvent = broadcastEvent;
+
+module.exports = handler;
